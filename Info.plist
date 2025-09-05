@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>OsiriXBackup</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.osirixbackup.plugin</string>
+	<key>CFBundleVersion</key>
+	<string>1.0.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>NSPrincipalClass</key>
+	<string>OsiriXBackup</string>
+	<key>pluginType</key>
+	<string>Database</string>
+	<key>MenuTitles</key>
+	<array>
+		<string>Iniciar Backup DICOM</string>
+		<string>Configurações de Backup</string>
+	</array>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2024 OsiriX Backup Plugin</string>
+</dict>
+</plist>
