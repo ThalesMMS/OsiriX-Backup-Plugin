@@ -56,6 +56,9 @@ static const NSUInteger MAX_SIMULTANEOUS_TRANSFERS = 2;
     isBackupPaused = NO;
     activeTransfers = [[NSMutableSet alloc] init];
     transferLock = [[NSLock alloc] init];
+    
+    // Initialize advanced features
+    [self initializeAdvancedFeatures];
 
     NSRect windowRect = NSMakeRect(0, 0, 400, 410); // Aumentei a altura para acomodar o novo checkbox
     configWindow = [[NSWindow alloc] initWithContentRect:windowRect
@@ -122,23 +125,32 @@ static const NSUInteger MAX_SIMULTANEOUS_TRANSFERS = 2;
 }
 
 - (NSString*)detectFindscuPath {
-    NSArray *paths = @[
-        @"/opt/homebrew/bin/findscu", // Apple Silicon (Homebrew)
-        @"/usr/local/bin/findscu",    // Intel Homebrew
-        @"/opt/dcmtk/bin/findscu",    // Instalações manuais
-        @"/usr/bin/findscu",           // Último recurso
-        [self findscuExecutablePath]
-    ];
-
-    NSFileManager *fm = [NSFileManager defaultManager];
-    for (NSString *path in paths) {
-        if ([fm isExecutableFileAtPath:path]) {
-            NSLog(@"[OsiriXBackup] findscu localizado em: %@", path);
-            return path;
+    @try {
+        NSArray *paths = @[
+            @"/opt/homebrew/bin/findscu", // Apple Silicon (Homebrew)
+            @"/usr/local/bin/findscu",    // Intel Homebrew
+            @"/opt/dcmtk/bin/findscu",    // Instalações manuais
+            @"/usr/bin/findscu"            // Último recurso
+        ];
+        
+        // Adicionar caminho do bundle se existir
+        NSString *bundlePath = [self findscuExecutablePath];
+        if (bundlePath) {
+            paths = [paths arrayByAddingObject:bundlePath];
         }
+
+        NSFileManager *fm = [NSFileManager defaultManager];
+        for (NSString *path in paths) {
+            if (path && [fm isExecutableFileAtPath:path]) {
+                NSLog(@"[OsiriXBackup] findscu localizado em: %@", path);
+                return path;
+            }
+        }
+    } @catch (NSException *exception) {
+        NSLog(@"[OsiriXBackup] Erro ao detectar findscu: %@", exception);
     }
 
-    NSLog(@"[OsiriXBackup] ERRO: 'findscu' não encontrado.");
+    NSLog(@"[OsiriXBackup] AVISO: 'findscu' não encontrado. Verificação de existência será desabilitada.");
     return nil;
 }
 
@@ -158,6 +170,11 @@ static const NSUInteger MAX_SIMULTANEOUS_TRANSFERS = 2;
 - (void)dealloc {
     [backupTimer invalidate];
     backupTimer = nil;
+    
+    // Cleanup advanced features
+    [cacheManager persistCacheToDisk];
+    [realtimeMonitor stopMonitoring];
+    [statistics exportToJSON:@"/tmp/osirix_backup_final_stats.json"];
 }
 
 - (NSString *)destinationHost {
@@ -471,10 +488,18 @@ static const NSUInteger MAX_SIMULTANEOUS_TRANSFERS = 2;
 
 
 - (void)startBackupProcess { // Chamado por UI Actions -> Main Thread
-    if (!hostAddress || [hostAddress length] == 0 || portNumber <= 0 ||
-        !aeDestination || [aeDestination length] == 0 || !aeTitle || [aeTitle length] == 0) {
-        NSAlert *alert = [NSAlert alertWithMessageText:@"Configurações Incompletas" defaultButton:@"OK" alternateButton:nil otherButton:nil informativeTextWithFormat:@"Por favor, complete todas as configurações."];
-        [alert runModal];
+    @try {
+        if (!hostAddress || [hostAddress length] == 0 || portNumber <= 0 ||
+            !aeDestination || [aeDestination length] == 0 || !aeTitle || [aeTitle length] == 0) {
+            NSAlert *alert = [[NSAlert alloc] init];
+            [alert setMessageText:@"Configurações Incompletas"];
+            [alert setInformativeText:@"Por favor, complete todas as configurações antes de iniciar o backup."];
+            [alert addButtonWithTitle:@"OK"];
+            [alert runModal];
+            return;
+        }
+    } @catch (NSException *exception) {
+        NSLog(@"[OsiriXBackup] Erro ao validar configurações: %@", exception);
         return;
     }
 
@@ -497,8 +522,26 @@ static const NSUInteger MAX_SIMULTANEOUS_TRANSFERS = 2;
         }
     }
 
-    DicomDatabase *database = [DicomDatabase activeLocalDatabase];
-    NSArray *allStudies = [database objectsForEntity:@"Study"];
+    DicomDatabase *database = nil;
+    NSArray *allStudies = nil;
+    
+    @try {
+        database = [DicomDatabase activeLocalDatabase];
+        if (!database) {
+            NSLog(@"[OsiriXBackup] ERRO: Não foi possível acessar o banco de dados DICOM");
+            NSAlert *alert = [[NSAlert alloc] init];
+            [alert setMessageText:@"Erro ao acessar banco de dados"];
+            [alert setInformativeText:@"Não foi possível acessar o banco de dados DICOM do OsiriX."];
+            [alert addButtonWithTitle:@"OK"];
+            [alert runModal];
+            return;
+        }
+        allStudies = [database objectsForEntity:@"Study"];
+        NSLog(@"[OsiriXBackup] Encontrados %lu estudos no banco de dados", (unsigned long)[allStudies count]);
+    } @catch (NSException *exception) {
+        NSLog(@"[OsiriXBackup] Erro ao acessar banco de dados: %@", exception);
+        return;
+    }
     @synchronized(pendingStudies) {
         [pendingStudies removeAllObjects];
         [pendingStudies addObjectsFromArray:allStudies];
@@ -880,7 +923,9 @@ static const NSUInteger MAX_SIMULTANEOUS_TRANSFERS = 2;
 - (void)processNextStudy {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{ // Processamento em background
         if (self->isBackupPaused || !self->isBackupRunning) {
-            NSLog(@"Backup pausado ou não rodando. Parando processNextStudy.");
+            NSLog(@"[OsiriXBackup] Estado do backup - Pausado: %@, Rodando: %@", 
+                  self->isBackupPaused ? @"SIM" : @"NÃO",
+                  self->isBackupRunning ? @"SIM" : @"NÃO");
             if (self->isBackupPaused) {
                 dispatch_async(dispatch_get_main_queue(), ^{ [self updateStatusForPausedBackup]; });
             }
@@ -936,17 +981,24 @@ static const NSUInteger MAX_SIMULTANEOUS_TRANSFERS = 2;
 
         NSString *studyUID = [currentStudy valueForKey:@"studyInstanceUID"];
         NSString *studyName = [currentStudy valueForKey:@"name"];
+        NSString *studyDate = [[currentStudy valueForKey:@"date"] description];
+        NSLog(@"[OsiriXBackup] Processando estudo: %@ - %@ (%@)", studyUID, studyName, studyDate);
+        
         dispatch_async(dispatch_get_main_queue(), ^{
             [self updateBackupProgress]; // Atualiza o progresso antes de verificar/enviar
             [self->statusLabel setStringValue:[NSString stringWithFormat:@"Verificando: %@", studyName]];
         });
 
+        NSLog(@"[OsiriXBackup] Verificando existência do estudo %@ no destino...", studyUID);
         BOOL studyExistsOnDest = [self studyFullyExistsOnDestination:currentStudy];
 
-        if (!self->isBackupRunning) return; // Verifica novamente se o backup foi interrompido
+        if (!self->isBackupRunning) {
+            NSLog(@"[OsiriXBackup] Backup foi interrompido durante verificação");
+            return;
+        }
 
         if (studyExistsOnDest) {
-            NSLog(@"Estudo %@ já existe completo. Pulando.", studyName);
+            NSLog(@"[OsiriXBackup] Estudo %@ já existe completo no destino. Pulando transferência.", studyName);
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self->statusLabel setStringValue:[NSString stringWithFormat:@"Pulado: %@", studyName]];
                 // updateBackupProgress já foi chamado, não precisa de novo aqui para "pulado"
@@ -959,7 +1011,6 @@ static const NSUInteger MAX_SIMULTANEOUS_TRANSFERS = 2;
             dispatch_async(dispatch_get_main_queue(), ^{
                 [self->statusLabel setStringValue:[NSString stringWithFormat:@"Enviando: %@", studyName]];
             });
-            NSLog(@"Enviando estudo: %@", studyName);
             NSMutableArray *filesToSend = [NSMutableArray array];
             NSArray *seriesArray = [currentStudy valueForKey:@"series"];
             for (DicomSeries *series in seriesArray) {
@@ -969,9 +1020,11 @@ static const NSUInteger MAX_SIMULTANEOUS_TRANSFERS = 2;
                     if (path) [filesToSend addObject:path];
                 }
             }
+            
+            NSLog(@"[OsiriXBackup] Preparando envio do estudo: %@ (%lu imagens)", studyName, (unsigned long)[filesToSend count]);
 
             if ([filesToSend count] == 0) {
-                NSLog(@"Nenhum arquivo para enviar para o estudo %@", studyName);
+                NSLog(@"[OsiriXBackup] AVISO: Nenhum arquivo DICOM encontrado para o estudo %@", studyName);
                 dispatch_async(dispatch_get_main_queue(), ^{
                     [self->statusLabel setStringValue:[NSString stringWithFormat:@"Sem arquivos: %@", studyName]];
                     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -1363,12 +1416,15 @@ static const NSUInteger MAX_SIMULTANEOUS_TRANSFERS = 2;
     DicomStudy *completedStudy = userInfo[@"dicomStudy"];
     DCMTKStoreSCU *storeSCU = userInfo[@"storeSCU"];
 
-    NSLog(@"Monitorando transferência para: %@ (%@)", studyName, studyUID);
+    NSLog(@"[OsiriXBackup] Iniciando transferência para: %@ (%@)", studyName, studyUID);
+    NSLog(@"[OsiriXBackup] Destino: %@:%ld AET:%@->%@", hostAddress, (long)portNumber, aeTitle, aeDestination);
 
     @try {
         [storeSCU run];
+        NSLog(@"[OsiriXBackup] Transferência completada para: %@", studyName);
     } @catch (NSException *e) {
-        NSLog(@"[OsiriXBackup] Exceção ao executar storeSCU: %@", e);
+        NSLog(@"[OsiriXBackup] ERRO: Exceção ao executar storeSCU para %@: %@", studyName, e);
+        NSLog(@"[OsiriXBackup] Stack trace: %@", [e callStackSymbols]);
     }
 
     [NSThread sleepForTimeInterval:3.0];  // Aguardar mais tempo para o servidor processar
@@ -1480,6 +1536,7 @@ static const NSUInteger MAX_SIMULTANEOUS_TRANSFERS = 2;
 
 - (void)updateBackupProgress { // Chamado pela Main Thread ou despacha para ela
     dispatch_async(dispatch_get_main_queue(), ^{
+        NSLog(@"[OsiriXBackup] Atualizando progresso do backup...");
         DicomDatabase *database = [DicomDatabase activeLocalDatabase];
         NSArray *allStudiesInDb = [database objectsForEntity:@"Study"];
         double totalStudiesInDb = [allStudiesInDb count];
@@ -1525,6 +1582,389 @@ static const NSUInteger MAX_SIMULTANEOUS_TRANSFERS = 2;
         NSString *statusText = [NSString stringWithFormat:@"%@Progresso: %.0f%% (%lu de %lu)",
                                 currentOperation, progress, studiesDone, (unsigned long)totalStudiesInDb];
         [self->statusLabel setStringValue:statusText];
+        
+        NSLog(@"[OsiriXBackup] Status: %@", statusText);
+    });
+}
+
+#pragma mark - Advanced Features Implementation
+
+- (void)initializeAdvancedFeatures {
+    // Initialize Cache Manager
+    cacheManager = [OsiriXBackupCacheManager sharedManager];
+    [cacheManager loadCacheFromDisk];
+    
+    // Initialize Transfer Queue
+    transferQueue = [[OsiriXTransferQueue alloc] init];
+    transferQueue.maxConcurrentTransfers = MAX_SIMULTANEOUS_TRANSFERS;
+    transferQueue.enablePriorityQueue = YES;
+    
+    // Initialize Statistics
+    statistics = [[OsiriXBackupStatistics alloc] init];
+    
+    // Initialize Integrity Validator
+    integrityValidator = [[OsiriXIntegrityValidator alloc] init];
+    
+    // Initialize Network Optimizer
+    networkOptimizer = [[OsiriXNetworkOptimizer alloc] init];
+    networkOptimizer.enableAdaptiveBandwidth = YES;
+    
+    // Initialize Error Recovery
+    errorRecovery = [OsiriXErrorRecoveryManager sharedManager];
+    errorRecovery.enableAutoRecovery = YES;
+    
+    // Initialize Incremental Backup Manager
+    incrementalManager = [[OsiriXIncrementalBackupManager alloc] init];
+    
+    // Initialize Realtime Monitor
+    realtimeMonitor = [[OsiriXRealtimeMonitor alloc] init];
+    realtimeMonitor.updateInterval = 1.0;
+    realtimeMonitor.statusUpdateHandler = ^(NSDictionary *status) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSLog(@"[RealtimeMonitor] Status: %@", status);
+            // Update UI with real-time status
+            if (self->statusLabel) {
+                NSString *speed = status[@"currentSpeed"] ? 
+                    [NSString stringWithFormat:@" (%.1f MB/s)", [status[@"currentSpeed"] doubleValue]] : @"";
+                NSString *statusText = [self->statusLabel stringValue];
+                [self->statusLabel setStringValue:[statusText stringByAppendingString:speed]];
+            }
+        });
+    };
+    
+    // Initialize Compression Engine
+    compressionEngine = [[OsiriXCompressionEngine alloc] init];
+    compressionEngine.preferredCompression = OsiriXCompressionGZIP;
+    compressionEngine.enableAdaptiveCompression = YES;
+    
+    // Initialize Deduplication Engine  
+    deduplicationEngine = [[OsiriXDeduplicationEngine alloc] init];
+    deduplicationEngine.enableBlockLevelDedup = YES;
+    deduplicationEngine.blockSize = 4096;
+    
+    NSLog(@"[OsiriXBackup] Advanced features initialized successfully");
+}
+
+- (void)performIncrementalBackup {
+    NSLog(@"[OsiriXBackup] Starting incremental backup...");
+    
+    DicomDatabase *database = [DicomDatabase activeLocalDatabase];
+    NSArray *allStudies = [database objectsForEntity:@"Study"];
+    
+    NSDate *lastBackup = [incrementalManager lastIncrementalBackupDate];
+    NSArray *studiesToBackup = [incrementalManager studiesForIncrementalBackup:allStudies 
+                                                                      sinceDate:lastBackup];
+    
+    NSLog(@"[OsiriXBackup] Found %lu studies for incremental backup", (unsigned long)studiesToBackup.count);
+    
+    @synchronized(pendingStudies) {
+        [pendingStudies removeAllObjects];
+        [pendingStudies addObjectsFromArray:studiesToBackup];
+    }
+    
+    [incrementalManager recordBackupSnapshot:studiesToBackup 
+                                        type:OsiriXBackupTypeIncremental 
+                                        date:[NSDate date]];
+    
+    isBackupRunning = YES;
+    [self processNextStudy];
+}
+
+- (void)performDifferentialBackup {
+    NSLog(@"[OsiriXBackup] Starting differential backup...");
+    
+    DicomDatabase *database = [DicomDatabase activeLocalDatabase];
+    NSArray *allStudies = [database objectsForEntity:@"Study"];
+    
+    NSDate *lastFullBackup = [incrementalManager lastFullBackupDate];
+    NSArray *studiesToBackup = [incrementalManager studiesForDifferentialBackup:allStudies 
+                                                           sinceFullBackupDate:lastFullBackup];
+    
+    NSLog(@"[OsiriXBackup] Found %lu studies for differential backup", (unsigned long)studiesToBackup.count);
+    
+    @synchronized(pendingStudies) {
+        [pendingStudies removeAllObjects];
+        [pendingStudies addObjectsFromArray:studiesToBackup];
+    }
+    
+    [incrementalManager recordBackupSnapshot:studiesToBackup 
+                                        type:OsiriXBackupTypeDifferential 
+                                        date:[NSDate date]];
+    
+    isBackupRunning = YES;
+    [self processNextStudy];
+}
+
+- (void)performSmartBackup {
+    NSLog(@"[OsiriXBackup] Starting smart backup with AI optimization...");
+    
+    DicomDatabase *database = [DicomDatabase activeLocalDatabase];
+    NSArray *allStudies = [database objectsForEntity:@"Study"];
+    
+    NSMutableArray *prioritizedStudies = [NSMutableArray array];
+    
+    // Use AI classifier to prioritize studies
+    OsiriXStudyClassifier *classifier = [[OsiriXStudyClassifier alloc] init];
+    classifier.enableMachineLearning = YES;
+    
+    for (DicomStudy *study in allStudies) {
+        // Check cache first
+        NSString *studyUID = [study valueForKey:@"studyInstanceUID"];
+        if ([cacheManager isStudyCached:studyUID]) {
+            NSString *cachedHash = [cacheManager cachedHashForStudy:studyUID];
+            NSString *currentHash = [OsiriXIntegrityValidator sha256HashForStudy:study];
+            
+            if ([cachedHash isEqualToString:currentHash]) {
+                NSLog(@"[SmartBackup] Study %@ unchanged, skipping", studyUID);
+                continue;
+            }
+        }
+        
+        // Classify priority
+        OsiriXTransferPriority priority = [classifier classifyStudyPriority:study];
+        
+        // Create transfer queue item
+        OsiriXTransferQueueItem *item = [[OsiriXTransferQueueItem alloc] init];
+        item.study = study;
+        item.studyUID = studyUID;
+        item.studyName = [study valueForKey:@"name"];
+        item.priority = priority;
+        item.totalImages = [[self class] totalImagesInStudy:study];
+        
+        [transferQueue addItem:item];
+    }
+    
+    // Start processing with optimized queue
+    [self processOptimizedQueue];
+}
+
++ (NSUInteger)totalImagesInStudy:(DicomStudy *)study {
+    NSUInteger total = 0;
+    for (DicomSeries *series in [study valueForKey:@"series"]) {
+        total += [[series valueForKey:@"images"] count];
+    }
+    return total;
+}
+
+- (void)processOptimizedQueue {
+    [realtimeMonitor startMonitoring];
+    
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+        while (YES) {
+            OsiriXTransferQueueItem *item = [self->transferQueue nextItemToProcess];
+            if (!item) {
+                if ([self->transferQueue itemsWithStatus:OsiriXTransferStatusInProgress].count == 0) {
+                    // All done
+                    break;
+                }
+                [NSThread sleepForTimeInterval:1.0];
+                continue;
+            }
+            
+            // Optimize transfer
+            [self optimizeTransferForStudy:item.study];
+            
+            // Track in monitor
+            [self->realtimeMonitor trackTransfer:item];
+            
+            // Start transfer
+            item.status = OsiriXTransferStatusInProgress;
+            item.startDate = [NSDate date];
+            
+            [self transferStudyWithItem:item];
+        }
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self generateBackupReport];
+            [self->realtimeMonitor stopMonitoring];
+        });
+    });
+}
+
+- (void)transferStudyWithItem:(OsiriXTransferQueueItem *)item {
+    @try {
+        // Prepare files
+        NSMutableArray *filesToSend = [NSMutableArray array];
+        DicomStudy *study = item.study;
+        
+        for (DicomSeries *series in [study valueForKey:@"series"]) {
+            for (id image in [series valueForKey:@"images"]) {
+                NSString *path = [image valueForKey:@"completePath"];
+                if (path) {
+                    // Check for deduplication
+                    if (![deduplicationEngine isDuplicate:path]) {
+                        [filesToSend addObject:path];
+                    }
+                }
+            }
+        }
+        
+        if (filesToSend.count == 0) {
+            item.status = OsiriXTransferStatusCompleted;
+            NSLog(@"[SmartBackup] Study %@ fully deduplicated", item.studyName);
+            return;
+        }
+        
+        // Create transfer
+        DCMTKStoreSCU *storeSCU = [[DCMTKStoreSCU alloc] initWithCallingAET:aeTitle
+                                                                   calledAET:aeDestination
+                                                                    hostname:hostAddress
+                                                                        port:(int)portNumber
+                                                                 filesToSend:filesToSend
+                                                              transferSyntax:0
+                                                             extraParameters:nil];
+        
+        // Execute transfer
+        [storeSCU run];
+        
+        // Validate integrity
+        [self validateStudyIntegrity:study];
+        
+        // Update statistics
+        item.completionDate = [NSDate date];
+        item.status = OsiriXTransferStatusCompleted;
+        item.transferredImages = filesToSend.count;
+        item.transferSpeed = [self calculateTransferSpeed:item];
+        
+        [statistics recordTransfer:item];
+        
+        // Cache the study
+        NSString *hash = [OsiriXIntegrityValidator sha256HashForStudy:study];
+        [cacheManager cacheStudy:study withHash:hash];
+        
+    } @catch (NSException *exception) {
+        NSLog(@"[SmartBackup] Transfer failed: %@", exception);
+        NSError *error = [NSError errorWithDomain:@"TransferError" 
+                                             code:-1 
+                                         userInfo:@{NSLocalizedDescriptionKey: exception.reason}];
+        
+        [errorRecovery handleError:error forItem:item];
+        [statistics recordFailure:item error:error];
+    }
+}
+
+- (double)calculateTransferSpeed:(OsiriXTransferQueueItem *)item {
+    if (!item.startDate || !item.completionDate) return 0;
+    
+    NSTimeInterval duration = [item.completionDate timeIntervalSinceDate:item.startDate];
+    if (duration <= 0) return 0;
+    
+    // Estimate size (0.5 MB per image average)
+    double sizeMB = item.transferredImages * 0.5;
+    return sizeMB / duration;
+}
+
+- (void)optimizeTransferForStudy:(DicomStudy *)study {
+    NSString *modality = [[study valueForKey:@"series"] firstObject] ? 
+                         [[[study valueForKey:@"series"] firstObject] valueForKey:@"modality"] : @"";
+    
+    // Optimize network for modality
+    if ([modality isEqualToString:@"CT"] || [modality isEqualToString:@"MR"]) {
+        // Large studies
+        networkOptimizer.chunkSize = 131072; // 128KB
+        compressionEngine.preferredCompression = OsiriXCompressionJPEG2000Lossless;
+    } else if ([modality isEqualToString:@"US"] || [modality isEqualToString:@"XA"]) {
+        // Video/cine studies  
+        networkOptimizer.chunkSize = 65536; // 64KB
+        compressionEngine.preferredCompression = OsiriXCompressionNone; // Already compressed
+    } else {
+        // Default
+        networkOptimizer.chunkSize = 32768; // 32KB
+        compressionEngine.preferredCompression = OsiriXCompressionGZIP;
+    }
+    
+    [networkOptimizer adjustTransferParameters];
+    NSLog(@"[Optimizer] Configured for %@ modality", modality);
+}
+
+- (void)validateStudyIntegrity:(DicomStudy *)study {
+    NSString *studyUID = [study valueForKey:@"studyInstanceUID"];
+    
+    // Generate manifest
+    NSDictionary *manifest = [OsiriXIntegrityValidator generateStudyManifest:study];
+    
+    // Save manifest
+    NSString *manifestPath = [NSString stringWithFormat:@"/tmp/manifest_%@.json", studyUID];
+    NSData *jsonData = [NSJSONSerialization dataWithJSONObject:manifest 
+                                                       options:NSJSONWritingPrettyPrinted 
+                                                         error:nil];
+    [jsonData writeToFile:manifestPath atomically:YES];
+    
+    // Validate
+    BOOL isValid = [OsiriXIntegrityValidator validateManifest:manifest forStudy:study];
+    
+    if (!isValid) {
+        NSLog(@"[IntegrityCheck] WARNING: Study %@ failed integrity validation", studyUID);
+        // Could trigger re-transfer here
+    } else {
+        NSLog(@"[IntegrityCheck] Study %@ validated successfully", studyUID);
+    }
+}
+
+- (void)generateBackupReport {
+    NSLog(@"[OsiriXBackup] Generating comprehensive backup report...");
+    
+    // Get statistics
+    NSDictionary *statsReport = [statistics generateReport];
+    NSDictionary *cacheStats = [cacheManager cacheStatistics];
+    NSDictionary *queueStats = [transferQueue queueStatistics];
+    NSDictionary *networkStats = [networkOptimizer networkStatistics];
+    NSDictionary *dedupStats = [deduplicationEngine deduplicationStatistics];
+    
+    // Combine all statistics
+    NSMutableDictionary *fullReport = [NSMutableDictionary dictionary];
+    fullReport[@"timestamp"] = [NSDate date];
+    fullReport[@"statistics"] = statsReport;
+    fullReport[@"cache"] = cacheStats;
+    fullReport[@"queue"] = queueStats;
+    fullReport[@"network"] = networkStats;
+    fullReport[@"deduplication"] = dedupStats;
+    
+    // Generate HTML report
+    NSString *htmlReport = [OsiriXBackupReportGenerator generateHTMLReport:statistics];
+    NSString *reportPath = @"/tmp/osirix_backup_report.html";
+    [htmlReport writeToFile:reportPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    
+    // Export statistics
+    [statistics exportToCSV:@"/tmp/osirix_backup_stats.csv"];
+    [statistics exportToJSON:@"/tmp/osirix_backup_stats.json"];
+    
+    NSLog(@"[OsiriXBackup] Report generated: %@", reportPath);
+    
+    // Show report in browser
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:reportPath]];
+}
+
+- (void)scheduleAutomaticBackups {
+    OsiriXBackupScheduler *scheduler = [OsiriXBackupScheduler sharedScheduler];
+    
+    // Create daily incremental backup
+    OsiriXBackupSchedule *dailySchedule = [[OsiriXBackupSchedule alloc] init];
+    dailySchedule.name = @"Daily Incremental";
+    dailySchedule.backupType = OsiriXBackupTypeIncremental;
+    dailySchedule.cronExpression = @"0 2 * * *"; // 2 AM daily
+    dailySchedule.enabled = YES;
+    [scheduler addSchedule:dailySchedule];
+    
+    // Create weekly full backup
+    OsiriXBackupSchedule *weeklySchedule = [[OsiriXBackupSchedule alloc] init];
+    weeklySchedule.name = @"Weekly Full";
+    weeklySchedule.backupType = OsiriXBackupTypeFull;
+    weeklySchedule.cronExpression = @"0 3 * * 0"; // 3 AM Sunday
+    weeklySchedule.enabled = YES;
+    [scheduler addSchedule:weeklySchedule];
+    
+    [scheduler startScheduler];
+    NSLog(@"[OsiriXBackup] Automatic backups scheduled");
+}
+
+- (void)enableRealtimeMonitoring {
+    [realtimeMonitor startMonitoring];
+    
+    // Set up performance metrics export
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(300 * NSEC_PER_SEC)), 
+                   dispatch_get_main_queue(), ^{
+        [self->realtimeMonitor exportMetricsToFile:@"/tmp/osirix_realtime_metrics.csv"];
     });
 }
 

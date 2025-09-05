@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		1214B6E42DD9161B00A77E1C /* OsiriXBackup.m in Sources */ = {isa = PBXBuildFile; fileRef = 1214B6E32DD9161B00A77E1C /* OsiriXBackup.m */; };
+		12517A732E6B0D4F0095A2E2 /* OsiriXBackupCore.m in Sources */ = {isa = PBXBuildFile; fileRef = 12517A722E6B0D4F0095A2E2 /* OsiriXBackupCore.m */; };
+		12517A742E6B0D4F0095A2E2 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 12517A6F2E6B0D4F0095A2E2 /* Info.plist */; };
+		12517A762E6B0F420095A2E2 /* OsiriXBackupAdvanced.m in Sources */ = {isa = PBXBuildFile; fileRef = 12517A752E6B0F420095A2E2 /* OsiriXBackupAdvanced.m */; };
 		CEC0F6EB28BF45CD003DD38F /* OsiriXAPI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CEC0F6E928BF45CD003DD38F /* OsiriXAPI.framework */; };
 		CEC0F6EE28BF49EB003DD38F /* Settings.xib in Resources */ = {isa = PBXBuildFile; fileRef = CEC0F6EC28BF49EB003DD38F /* Settings.xib */; };
 		CEC0F6F228BF8DF5003DD38F /* Plugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC0F6F128BF8DF5003DD38F /* Plugin.swift */; };
@@ -16,6 +19,11 @@
 /* Begin PBXFileReference section */
 		1214B6E22DD9161B00A77E1C /* OsiriXBackup.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OsiriXBackup.h; sourceTree = "<group>"; };
 		1214B6E32DD9161B00A77E1C /* OsiriXBackup.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = OsiriXBackup.m; sourceTree = "<group>"; };
+		12517A6F2E6B0D4F0095A2E2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		12517A702E6B0D4F0095A2E2 /* OsiriXBackupAdvanced.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OsiriXBackupAdvanced.h; sourceTree = "<group>"; };
+		12517A712E6B0D4F0095A2E2 /* OsiriXBackupCore.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OsiriXBackupCore.h; sourceTree = "<group>"; };
+		12517A722E6B0D4F0095A2E2 /* OsiriXBackupCore.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = OsiriXBackupCore.m; sourceTree = "<group>"; };
+		12517A752E6B0F420095A2E2 /* OsiriXBackupAdvanced.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = OsiriXBackupAdvanced.m; sourceTree = "<group>"; };
 		CEC0F6E028BF4354003DD38F /* OsiriXTestPlugin.osirixplugin */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OsiriXTestPlugin.osirixplugin; sourceTree = BUILT_PRODUCTS_DIR; };
 		CEC0F6E928BF45CD003DD38F /* OsiriXAPI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = OsiriXAPI.framework; sourceTree = "<group>"; };
 		CEC0F6EC28BF49EB003DD38F /* Settings.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = Settings.xib; sourceTree = "<group>"; };
@@ -38,6 +46,11 @@
 		CEC0F6D728BF4354003DD38F = {
 			isa = PBXGroup;
 			children = (
+				12517A752E6B0F420095A2E2 /* OsiriXBackupAdvanced.m */,
+				12517A6F2E6B0D4F0095A2E2 /* Info.plist */,
+				12517A702E6B0D4F0095A2E2 /* OsiriXBackupAdvanced.h */,
+				12517A712E6B0D4F0095A2E2 /* OsiriXBackupCore.h */,
+				12517A722E6B0D4F0095A2E2 /* OsiriXBackupCore.m */,
 				1214B6E22DD9161B00A77E1C /* OsiriXBackup.h */,
 				1214B6E32DD9161B00A77E1C /* OsiriXBackup.m */,
 				CEC0F6E928BF45CD003DD38F /* OsiriXAPI.framework */,
@@ -114,6 +127,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				12517A742E6B0D4F0095A2E2 /* Info.plist in Resources */,
 				CEC0F6EE28BF49EB003DD38F /* Settings.xib in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -125,8 +139,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				12517A732E6B0D4F0095A2E2 /* OsiriXBackupCore.m in Sources */,
 				CEC0F6F228BF8DF5003DD38F /* Plugin.swift in Sources */,
 				1214B6E42DD9161B00A77E1C /* OsiriXBackup.m in Sources */,
+				12517A762E6B0F420095A2E2 /* OsiriXBackupAdvanced.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

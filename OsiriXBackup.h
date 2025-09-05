@@ -5,6 +5,8 @@
 #import <OsiriXAPI/DicomSeries.h>
 #import <OsiriXAPI/DicomDatabase.h>
 #import <OsiriXAPI/DCMTKStoreSCU.h>
+#import "OsiriXBackupCore.h"
+#import "OsiriXBackupAdvanced.h"
 
 @interface OsiriXBackup : PluginFilter
 {
@@ -39,6 +41,18 @@
     NSMutableSet *activeTransfers;
     NSLock *transferLock;
     NSMutableDictionary *retryCounts;
+    
+    // Advanced Features
+    OsiriXBackupCacheManager *cacheManager;
+    OsiriXTransferQueue *transferQueue;
+    OsiriXBackupStatistics *statistics;
+    OsiriXIntegrityValidator *integrityValidator;
+    OsiriXNetworkOptimizer *networkOptimizer;
+    OsiriXErrorRecoveryManager *errorRecovery;
+    OsiriXIncrementalBackupManager *incrementalManager;
+    OsiriXRealtimeMonitor *realtimeMonitor;
+    OsiriXCompressionEngine *compressionEngine;
+    OsiriXDeduplicationEngine *deduplicationEngine;
 }
 
 - (long)filterImage:(NSString*)menuName;
@@ -63,4 +77,16 @@
 - (void)updateStatusForPausedBackup;
 - (BOOL)studyExistsWithCountCheck:(NSString *)studyUID; // Método para verificação simplificada
 - (NSArray<NSDictionary *> *)fetchImageLevelInstancesForStudy:(NSString *)studyUID;
+
+// Advanced Methods
+- (void)initializeAdvancedFeatures;
+- (void)performIncrementalBackup;
+- (void)performDifferentialBackup;
+- (void)performSmartBackup;
+- (void)optimizeTransferForStudy:(DicomStudy *)study;
+- (void)validateStudyIntegrity:(DicomStudy *)study;
+- (void)generateBackupReport;
+- (void)scheduleAutomaticBackups;
+- (void)enableRealtimeMonitoring;
+
 @end
