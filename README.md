@@ -1,9 +1,9 @@
 # OsiriX Backup Plugin
 
-An advanced backup plugin for OsiriX that automates sending DICOM studies to remote PACS or storage destinations with integrity checks, adaptive networking, and scheduling intelligence. The project combines a mature Objective-C core with Swift-based UI elements to deliver both rich functionality and an accessible configuration experience.
+An advanced backup plugin for OsiriX that automates sending DICOM studies to remote PACS or storage destinations with integrity checks, adaptive networking, and scheduling heuristics. The project combines a mature Objective-C core with Swift-based UI elements to deliver both rich functionality and an accessible configuration experience.
 
 ## Highlights
-- Multi-strategy backups: full, incremental, differential, and AI-assisted smart runs
+- Multi-strategy backups: full, incremental, differential, and smart prioritisation helpers
 - Intelligent queueing with priority, retry, and monitoring capabilities
 - SHA-256 integrity manifests and duplicate avoidance safeguards
 - Adaptive compression, bandwidth tuning, and deduplication engines
@@ -119,7 +119,7 @@ Pausing or stopping allows in-flight transfers to finish gracefully while new on
 
 ## Advanced Features
 - **Incremental & Differential Backups** – `OsiriXIncrementalBackupManager` snapshots hashes per study to compute deltas (`recordBackupSnapshot:`, `studiesForIncrementalBackup:`).
-- **Smart (AI-Assisted) Backup** – `OsiriXStudyClassifier` prioritises studies using modality, age, and keyword heuristics, feeding `OsiriXTransferQueue` for optimized throughput.
+- **Smart (Rule-Based) Backup** – `OsiriXStudyClassifier` prioritises studies using modality-specific rules and study age heuristics before enqueuing them in `OsiriXTransferQueue`.
 - **Network Optimization** – `OsiriXNetworkOptimizer` adapts chunk sizes and windowing for Wi-Fi, Ethernet, or cellular contexts and can measure bandwidth against destinations.
 - **Deduplication** – `OsiriXDeduplicationEngine` fingerprints images to skip duplicates and optionally rebuilds its database across sessions.
 - **Compression** – `OsiriXCompressionEngine` selects a compression algorithm per modality (e.g., JPEG2000 lossless for CT/MR) and estimates savings before applying.
@@ -129,7 +129,7 @@ Pausing or stopping allows in-flight transfers to finish gracefully while new on
 - **Extensibility Hooks** – Cloud integration, bandwidth QoS, notification channels (email/push/SMS), data encryption, and audit logging classes provide scaffolding for future integrations.
 
 ## Deployment Checklist
-- Verify `findscu` availability: the plugin ships a copy in `Contents/Resources/findscu`; otherwise configure a Homebrew or manual path.
+- Verify `findscu` availability: the plugin first looks for a bundled copy at `Contents/Resources/findscu`; otherwise configure a Homebrew or manual path.
 - Confirm the destination AE accepts C-STORE requests from the configured local AE.
 - Ensure `/tmp` is writable for report and statistics exports.
 - Grant OsiriX the necessary macOS permissions to launch helper tasks (DCMTK tools) and read from the DICOM database.
