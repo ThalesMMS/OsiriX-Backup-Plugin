@@ -10,12 +10,13 @@ An advanced backup plugin for OsiriX that automates sending DICOM studies to rem
 - Comprehensive reporting, statistics export, and recovery tooling
 
 ## Repository Layout
-- `OsiriXBackup.h/.m` – primary plugin filter with UI flow, backup orchestration, and DCMTK integrations
-- `OsiriXBackupCore.h/.m` – reusable core services (cache, queue, integrity validator, network optimizer, statistics, destinations, report generator, error recovery)
-- `OsiriXBackupAdvanced.h/.m` – advanced modules (incremental/differential manager, smart scheduler, study classifier, deduplication, monitoring, cloud hooks, notifications, encryption)
-- `Plugin.swift` – Swift-based lightweight interface that loads the shared Settings nib for macOS UI
-- `Settings.xib` – Interface Builder resource for the configuration window (used by both ObjC and Swift entry points)
-- `Info.plist` – OsiriX plugin metadata (bundle identifiers, menu registration)
+- `Sources/ObjectiveC/` – Objective-C entry points (`OsiriXBackup`), core services, and advanced backup modules
+- `Sources/Swift/Plugin.swift` – Swift glue that loads the shared settings UI and bridges into the Objective-C layer
+- `Sources/Shared/OsiriXTestPlugin-Bridging-Header.h` – Exposes Objective-C symbols to the Swift code
+- `Resources/Info.plist` – OsiriX plugin metadata (bundle identifiers, menu registration)
+- `Resources/Settings.xib` – Interface Builder resource for the configuration window (used by both ObjC and Swift entry points)
+- `Scripts/` – Repository automation helpers (code collection and listing tools)
+- `docs/` – Generated reference material, including `all_project_code.txt`
 - `OsiriXTestPlugin.xcodeproj` – Xcode project targeting the OsiriX plugin SDK
 
 ## Architecture Overview
@@ -154,6 +155,5 @@ Pausing or stopping allows in-flight transfers to finish gracefully while new on
 
 ## License
 
-Refer to OsiriX and institutional policies for distribution and deployment. Update this section with explicit licensing information if you plan to release the plugin publicly.
-
+This project is released under the [MIT License](LICENSE).
 
