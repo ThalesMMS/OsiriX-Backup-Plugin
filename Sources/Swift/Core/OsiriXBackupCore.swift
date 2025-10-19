@@ -347,7 +347,7 @@ public final class OsiriXBackupCacheManager: NSObject {
     }
 
     public func persistCacheToDisk() {
-        let snapshot: CacheSnapshot = accessLock.withLock { [storage, _maxCacheSize] in
+        let snapshot: CacheSnapshot = accessLock.withLock {
             CacheSnapshot(maxCacheSize: _maxCacheSize, entries: storage)
         }
 
