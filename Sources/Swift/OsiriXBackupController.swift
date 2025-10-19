@@ -89,6 +89,30 @@ final class OsiriXBackupController: NSObject {
     private var skipVerification = false
     private var useSimpleVerification = true
     private var findscuPath: String?
+    private lazy var findscuLocator: FindscuLocator = {
+        let environment = FindscuLocator.Environment(
+            fileManager: FileManager.default,
+            processRunner: DefaultFindscuProcessRunner(),
+            candidatePaths: [
+                "/opt/homebrew/bin/findscu",
+                "/usr/local/bin/findscu",
+                "/opt/dcmtk/bin/findscu",
+                "/usr/bin/findscu"
+            ],
+            cachedPathProvider: { [weak self] in self?.findscuPath },
+            updateCachedPath: { [weak self] path in
+                self?.findscuPath = path
+                guard let self else { return }
+                if let path {
+                    self.defaults.set(path, forKey: "OsiriXBackupFindscuPath")
+                } else {
+                    self.defaults.removeObject(forKey: "OsiriXBackupFindscuPath")
+                }
+            },
+            bundledExecutablePath: { [weak self] in self?.bundledFindscuPath() }
+        )
+        return FindscuLocator(environment: environment)
+    }()
 
     private var pendingStudies: [PendingStudy] = []
     private var activeTransfers: Set<String> = []
@@ -634,32 +658,7 @@ final class OsiriXBackupController: NSObject {
     }
 
     private func resolveFindscuPath() -> String? {
-        if let currentPath = findscuPath, FileManager.default.isExecutableFile(atPath: currentPath) {
-            return currentPath
-        }
-
-        let possiblePaths = [
-            "/opt/homebrew/bin/findscu",
-            "/usr/local/bin/findscu",
-            "/opt/dcmtk/bin/findscu",
-            "/usr/bin/findscu"
-        ]
-
-        var lookupPaths = possiblePaths
-        if let bundled = bundledFindscuPath() {
-            lookupPaths.insert(bundled, at: 0)
-        }
-
-        for path in lookupPaths {
-            guard FileManager.default.isExecutableFile(atPath: path) else { continue }
-            if testFindscuExecutable(at: path) {
-                findscuPath = path
-                persistSettings()
-                return path
-            }
-        }
-
-        return nil
+        return findscuLocator.resolve()
     }
 
     private func bundledFindscuPath() -> String? {
@@ -677,27 +676,6 @@ final class OsiriXBackupController: NSObject {
         }
 
         return nil
-    }
-
-    private func testFindscuExecutable(at path: String) -> Bool {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: path)
-        process.arguments = ["--version"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-
-        do {
-            try process.run()
-        } catch {
-            NSLog("[OsiriXBackupController] Falha ao executar findscu em %@: %@", path, error.localizedDescription)
-            return false
-        }
-
-        process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8) else { return false }
-        return output.contains("findscu") && output.contains("DCMTK")
     }
 
     private func studyExistsOnDestination(studyUID: String) -> Bool {

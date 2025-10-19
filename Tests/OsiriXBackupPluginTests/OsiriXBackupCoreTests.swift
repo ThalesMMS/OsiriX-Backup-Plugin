@@ -166,6 +166,31 @@ final class OsiriXBackupCoreTests: XCTestCase {
         XCTAssertTrue(OsiriXIntegrityValidator.validateManifest(manifest, for: study))
     }
 
+    func testIntegrityValidatorDetectsIncrementalChanges() {
+        let originalImages = [MockDicomImage(uid: "img-1"), MockDicomImage(uid: "img-2")]
+        let series = [MockDicomSeries(uid: "series-1", modality: "CT", images: originalImages)]
+        let study = MockDicomStudy(
+            uid: "study-4",
+            name: "Cardiac CT",
+            modality: "CT",
+            date: Date(),
+            series: series
+        )
+
+        let expectedHash = OsiriXIntegrityValidator.sha256HashForStudy(study)
+        XCTAssertNotNil(expectedHash)
+
+        let mutatedStudy = MockDicomStudy(
+            uid: "study-4",
+            name: "Cardiac CT",
+            modality: "CT",
+            date: Date(),
+            series: [MockDicomSeries(uid: "series-1", modality: "CT", images: [MockDicomImage(uid: "img-1")])]
+        )
+
+        XCTAssertFalse(OsiriXIntegrityValidator.validateStudyIntegrity(mutatedStudy, expectedHash: expectedHash ?? ""))
+    }
+
     private static func cacheFileURL() throws -> URL {
         let fileManager = FileManager.default
         #if os(macOS)
