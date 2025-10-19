@@ -7,7 +7,9 @@
 #define OSIRIXBACKUPCORE_H
 
 #import <Foundation/Foundation.h>
-#import <CommonCrypto/CommonDigest.h>
+#if __has_include("OsiriXTestPlugin-Swift.h")
+#import "OsiriXTestPlugin-Swift.h"
+#endif
 
 // Forward declarations
 @class DicomStudy;
@@ -54,67 +56,6 @@ typedef NS_ENUM(NSInteger, OsiriXCompressionType) {
 
 #pragma mark - Cache Manager
 
-@interface OsiriXBackupCacheManager : NSObject
-
-@property (nonatomic, strong, readonly) NSCache *studyCache;
-@property (nonatomic, strong, readonly) NSMutableDictionary *hashCache;
-@property (nonatomic, assign) NSUInteger maxCacheSize;
-
-+ (instancetype)sharedManager;
-- (void)cacheStudy:(DicomStudy *)study withHash:(NSString *)hash;
-- (NSString *)cachedHashForStudy:(NSString *)studyUID;
-- (BOOL)isStudyCached:(NSString *)studyUID;
-- (void)invalidateCache;
-- (void)persistCacheToDisk;
-- (void)loadCacheFromDisk;
-- (NSDictionary *)cacheStatistics;
-
-@end
-
-#pragma mark - Transfer Queue
-
-@interface OsiriXTransferQueueItem : NSObject
-
-@property (nonatomic, strong) NSString *studyUID;
-@property (nonatomic, strong) NSString *studyName;
-@property (nonatomic, strong) DicomStudy *study;
-@property (nonatomic, assign) OsiriXTransferPriority priority;
-@property (nonatomic, assign) OsiriXTransferStatus status;
-@property (nonatomic, strong) NSDate *queuedDate;
-@property (nonatomic, strong) NSDate *startDate;
-@property (nonatomic, strong) NSDate *completionDate;
-@property (nonatomic, assign) NSUInteger retryCount;
-@property (nonatomic, assign) NSTimeInterval nextRetryInterval;
-@property (nonatomic, strong) NSString *destinationAET;
-@property (nonatomic, strong) NSString *lastError;
-@property (nonatomic, assign) NSUInteger totalImages;
-@property (nonatomic, assign) NSUInteger transferredImages;
-@property (nonatomic, assign) double transferSpeed; // MB/s
-@property (nonatomic, strong) NSString *sha256Hash;
-
-- (NSTimeInterval)elapsedTime;
-- (NSTimeInterval)estimatedTimeRemaining;
-- (double)progressPercentage;
-
-@end
-
-@interface OsiriXTransferQueue : NSObject
-
-@property (nonatomic, strong, readonly) NSMutableArray<OsiriXTransferQueueItem *> *queue;
-@property (nonatomic, assign) NSUInteger maxConcurrentTransfers;
-@property (nonatomic, assign) NSUInteger maxRetries;
-@property (nonatomic, assign) BOOL enablePriorityQueue;
-
-- (void)addItem:(OsiriXTransferQueueItem *)item;
-- (void)removeItem:(OsiriXTransferQueueItem *)item;
-- (OsiriXTransferQueueItem *)nextItemToProcess;
-- (NSArray<OsiriXTransferQueueItem *> *)itemsWithStatus:(OsiriXTransferStatus)status;
-- (void)prioritizeItem:(OsiriXTransferQueueItem *)item;
-- (void)cancelAllTransfers;
-- (NSDictionary *)queueStatistics;
-
-@end
-
 #pragma mark - Backup Scheduler
 
 @interface OsiriXBackupSchedule : NSObject
@@ -153,17 +94,6 @@ typedef NS_ENUM(NSInteger, OsiriXCompressionType) {
 @end
 
 #pragma mark - Integrity Validator
-
-@interface OsiriXIntegrityValidator : NSObject
-
-+ (NSString *)sha256HashForFile:(NSString *)filePath;
-+ (NSString *)sha256HashForData:(NSData *)data;
-+ (NSString *)sha256HashForStudy:(DicomStudy *)study;
-+ (BOOL)validateStudyIntegrity:(DicomStudy *)study expectedHash:(NSString *)hash;
-+ (NSDictionary *)generateStudyManifest:(DicomStudy *)study;
-+ (BOOL)validateManifest:(NSDictionary *)manifest forStudy:(DicomStudy *)study;
-
-@end
 
 #pragma mark - Network Optimizer
 

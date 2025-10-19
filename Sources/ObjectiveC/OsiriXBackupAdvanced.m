@@ -5,6 +5,7 @@
 
 #import "OsiriXBackupAdvanced.h"
 #import "OsiriXBackupCore.h"
+#import "OsiriXTestPlugin-Swift.h"
 #import <OsiriXAPI/DicomStudy.h>
 #import <OsiriXAPI/DicomSeries.h>
 #import <CommonCrypto/CommonDigest.h>
