@@ -7,7 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		12517A742E6B0D4F0095A2E2 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 12517A6F2E6B0D4F0095A2E2 /* Info.plist */; };
+               1214B6E42DD9161B00A77E1C /* OsiriXBackup.m in Sources */ = {isa = PBXBuildFile; fileRef = 1214B6E32DD9161B00A77E1C /* OsiriXBackup.m */; };
+               12517A732E6B0D4F0095A2E2 /* OsiriXBackupCore.m in Sources */ = {isa = PBXBuildFile; fileRef = 12517A722E6B0D4F0095A2E2 /* OsiriXBackupCore.m */; };
+               12517A742E6B0D4F0095A2E2 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 12517A6F2E6B0D4F0095A2E2 /* Info.plist */; };
+               12517A762E6B0F420095A2E2 /* OsiriXBackupAdvanced.m in Sources */ = {isa = PBXBuildFile; fileRef = 12517A752E6B0F420095A2E2 /* OsiriXBackupAdvanced.m */; };
 		CEC0F6EB28BF45CD003DD38F /* OsiriXAPI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CEC0F6E928BF45CD003DD38F /* OsiriXAPI.framework */; };
 		CEC0F6EE28BF49EB003DD38F /* Settings.xib in Resources */ = {isa = PBXBuildFile; fileRef = CEC0F6EC28BF49EB003DD38F /* Settings.xib */; };
                 CEC0F6F228BF8DF5003DD38F /* Plugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC0F6F128BF8DF5003DD38F /* Plugin.swift */; };
@@ -212,8 +215,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
                         files = (
+                                12517A732E6B0D4F0095A2E2 /* OsiriXBackupCore.m in Sources */,
                                 CEC0F6F228BF8DF5003DD38F /* Plugin.swift in Sources */,
+                                1214B6E42DD9161B00A77E1C /* OsiriXBackup.m in Sources */,
                                 F3CD12B62F6FA2D9006C47A1 /* OsiriXAPI+Wrappers.swift in Sources */,
+                                12517A762E6B0F420095A2E2 /* OsiriXBackupAdvanced.m in Sources */,
                                 F3CD12B32F6FA2D9006C47A1 /* OsiriXBackup.swift in Sources */,
                                 F3CD12B42F6FA2D9006C47A1 /* OsiriXBackupCore.swift in Sources */,
                                 F3CD12B52F6FA2D9006C47A1 /* OsiriXBackupAdvanced.swift in Sources */,
