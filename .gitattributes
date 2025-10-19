@@ -1,0 +1,3 @@
+# Treat bundled Objective-C frameworks as vendored to exclude them from GitHub Linguist stats
+Frameworks/** linguist-vendored
+*.framework/** linguist-vendored
