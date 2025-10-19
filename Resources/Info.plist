@@ -10,8 +10,8 @@
 	<string>1.0.0</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
-	<key>NSPrincipalClass</key>
-	<string>OsiriXBackup</string>
+        <key>NSPrincipalClass</key>
+        <string>OsiriXBackupSwift</string>
 	<key>pluginType</key>
 	<string>Database</string>
 	<key>MenuTitles</key>

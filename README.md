@@ -1,6 +1,6 @@
 # OsiriX Backup Plugin
 
-An advanced backup plugin for OsiriX that automates sending DICOM studies to remote PACS or storage destinations with integrity checks, adaptive networking, and scheduling heuristics. The project combines a mature Objective-C core with Swift-based UI elements to deliver both rich functionality and an accessible configuration experience.
+An advanced backup plugin for OsiriX that automates sending DICOM studies to remote PACS or storage destinations with integrity checks, adaptive networking, and scheduling heuristics. The project now ships as a pure Swift implementation that leverages `OsiriXAPI` for host integration while maintaining rich functionality and an accessible configuration experience.
 
 ## Highlights
 - Multi-strategy backups: full, incremental, differential, and smart prioritisation helpers
@@ -10,9 +10,9 @@ An advanced backup plugin for OsiriX that automates sending DICOM studies to rem
 - Comprehensive reporting, statistics export, and recovery tooling
 
 ## Repository Layout
-- `Sources/ObjectiveC/` – Objective-C entry points (`OsiriXBackup`), core services, and advanced backup modules
-- `Sources/Swift/Plugin.swift` – Swift glue that loads the shared settings UI and bridges into the Objective-C layer
-- `Sources/Shared/OsiriXTestPlugin-Bridging-Header.h` – Exposes Objective-C symbols to the Swift code
+- `Sources/Swift/Core/` – Plugin entry point (`Plugin.swift`), backup engine (`OsiriXBackup.swift`), API wrappers, and foundational services
+- `Sources/Swift/Advanced/` – Optional modules that extend the core workflow with incremental backups, scheduling, monitoring, compression, and reporting helpers
+- `Sources/Swift/OsiriXBackupController.swift` – Central coordinator that wires the UI, user defaults, and backup engine together
 - `Resources/Info.plist` – OsiriX plugin metadata (bundle identifiers, menu registration)
 - `Resources/Settings.xib` – Interface Builder resource for the configuration window (used by both ObjC and Swift entry points)
 - `Scripts/` – Repository automation helpers (code collection and listing tools)
@@ -23,59 +23,18 @@ An advanced backup plugin for OsiriX that automates sending DICOM studies to rem
 
 The plugin is grouped into three cooperating layers:
 
-1. **UI & Control Layer** – `OsiriXBackup` (Objective-C) and `OsiriXBackupSwift` (Swift) respond to menu actions, render the configuration window, persist user defaults, and trigger backup executions. The UI wiring is contained in `Settings.xib`, which exposes host/port/AET fields, progress indicators, and verification toggles.
+1. **UI & Control Layer** – `OsiriXBackupSwift` (in `Plugin.swift`) responds to menu actions while `OsiriXBackupController` wires the settings UI, user defaults, and backup execution pipeline. The UI wiring remains in `Settings.xib`, which exposes host/port/AET fields, progress indicators, and verification toggles.
 
-2. **Core Services Layer** – Utility classes provide caching, queue management, integrity validation, network optimization, statistics tracking, and error recovery. These services are aggregated via singleton-style managers to coordinate study processing.
+2. **Core Services Layer** – `OsiriXBackup` and `OsiriXBackupCore` provide caching, queue management, integrity validation, network optimization, statistics tracking, and error recovery through Swift value types and helper managers.
 
-3. **Advanced Capabilities Layer** – Optional modules add incremental/differential backups, intelligent scheduling, real-time monitoring, deduplication, compression, cloud syncing, disaster recovery, and notification hooks. These modules plug into the core queue and statistics systems to extend behavior without rewriting the base workflow.
+3. **Advanced Capabilities Layer** – `OsiriXBackupAdvanced` extends the core workflow with incremental/differential backups, intelligent scheduling, real-time monitoring, deduplication, compression, cloud syncing, disaster recovery, and notification hooks.
 
-Key class responsibilities:
+Key Swift types:
 
-```120:207:OsiriXBackupCore.h
-// ... existing code ...
-@interface OsiriXBackupCacheManager : NSObject
-// Maintains in-memory and persisted study fingerprints to skip unchanged datasets
-@end
-
-@interface OsiriXTransferQueue : NSObject
-// Coordinates concurrent transfers with priority-aware scheduling and statistics
-@end
-
-@interface OsiriXIntegrityValidator : NSObject
-// Generates SHA-256 hashes and manifests for study, series, and file-level validation
-@end
-
-@interface OsiriXNetworkOptimizer : NSObject
-// Tunes chunk size, windowing, and bandwidth targets per network type
-@end
-
-@interface OsiriXBackupStatistics : NSObject
-// Records throughput, success ratios, and exports CSV/JSON reports
-@end
-```
-
-```16:203:OsiriXBackupAdvanced.h
-// ... existing code ...
-@interface OsiriXIncrementalBackupManager : NSObject
-// Determines deltas between snapshots for incremental/differential runs
-@end
-
-@interface OsiriXRealtimeMonitor : NSObject
-// Streams live transfer speed, CPU, memory, and disk telemetry with alert hooks
-@end
-
-@interface OsiriXCompressionEngine : NSObject
-// Applies modality-aware compression and ratio estimation
-@end
-
-@interface OsiriXDeduplicationEngine : NSObject
-// Generates SHA-256 fingerprints and prunes duplicate payloads
-@end
-
-@interface OsiriXBackupScheduler : NSObject
-// Cron-inspired scheduler with enable/disable controls and notifications
-@end
-```
+- `OsiriXBackupController` centralizes plugin initialization, menu dispatch, and settings persistence.
+- `OsiriXBackup` orchestrates DICOM export requests, invoking verification and queue management services.
+- `OsiriXBackupCore` houses transfer queues, hashing, compression, and manifest utilities used across backup strategies.
+- `OsiriXBackupAdvanced` contributes optional schedulers, monitors, and policy engines that plug into the shared controller.
 
 ## Prerequisites
 - macOS with OsiriX (MD or non-MD) and its plugin SDK installed
@@ -104,7 +63,7 @@ The `Settings` window collects connection and verification options:
 - **Skip existence verification** – Bypass `findscu` queries (faster but risks duplication)
 - **Use simplified verification** – Default-enabled check using lightweight study-level counts
 
-Values persist through `NSUserDefaults` keys (`OsiriXBackupHostAddress`, `OsiriXBackupPortNumber`, etc.), allowing the Swift and Objective-C entry points to share configuration.
+Values persist through `NSUserDefaults` keys (`OsiriXBackupHostAddress`, `OsiriXBackupPortNumber`, etc.), allowing the Swift entry point to share configuration with existing OsiriX preferences.
 
 ## Running Backups
 1. Launch OsiriX and open the *Iniciar Backup DICOM* menu item.
@@ -144,8 +103,8 @@ Pausing or stopping allows in-flight transfers to finish gracefully while new on
 ## Development Tips
 - The plugin targets the OsiriX SDK: add the framework to Xcode’s *Frameworks and Libraries* section if missing.
 - Update `Info.plist` to localize menu titles or expose additional configuration commands.
-- Swift and Objective-C components share the same nib; customize it once to affect both entry points.
-- When adding new modules, register them in `initializeAdvancedFeatures` within `OsiriXBackup.m` to ensure state is prepared during plugin initialization.
+- The Swift controller loads `Settings.xib`, so customising it updates the plugin UI without additional wiring.
+- When adding new modules, register them in `initializeAdvancedFeatures` within `OsiriXBackup.swift` to ensure state is prepared during plugin initialization.
 
 ## Roadmap Ideas
 - Implement real cloud upload/download flows in `OsiriXCloudIntegration`

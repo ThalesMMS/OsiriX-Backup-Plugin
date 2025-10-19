@@ -2,13 +2,14 @@ const fs = require('fs');
 const path = require('path');
 
 // --- Configuração ---
-const projectRoot = __dirname; // O script deve estar na raiz do projeto
+const projectRoot = path.resolve(__dirname, '..');
 const outputFileName = 'all_project_code.txt';
 const filesToInclude = [
-    'Plugin.swift',
-    'OsiriXTestPlugin-Bridging-Header.h',
-    'Info.plist',
-    'Settings.xib' // Nota: Este é um arquivo XML que define a UI.
+    path.join('Sources', 'Swift', 'Core', 'Plugin.swift'),
+    path.join('Sources', 'Swift', 'OsiriXBackupController.swift'),
+    path.join('Sources', 'Swift', 'Core', 'OsiriXBackup.swift'),
+    path.join('Resources', 'Info.plist'),
+    path.join('Resources', 'Settings.xib') // Nota: Este é um arquivo XML que define a UI.
 ];
 // --- Fim da Configuração ---
 

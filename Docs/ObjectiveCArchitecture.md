@@ -1,5 +1,7 @@
 # Objective-C Architecture Reference
 
+> **Historical reference:** The Objective-C sources cited below were removed in the Swift migration. The document is retained for legacy context when comparing the former implementation against the new Swift modules.
+
 ## OsiriXBackup UI and Automation Surface
 
 ### User Interface Composition
