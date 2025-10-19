@@ -1,8 +1,11 @@
 import Foundation
 import Cocoa
+import OsiriXAPI
 
 @objc(OsiriXBackupSwift)
 class OsiriXBackupSwift: PluginFilter {
+    private let backupCoordinator = OsiriXBackupAdvanced()
+
     @IBOutlet var configWindow: NSWindow!
     @IBOutlet weak var hostField: NSTextField!
     @IBOutlet weak var portField: NSTextField!
@@ -28,6 +31,7 @@ class OsiriXBackupSwift: PluginFilter {
             loadConfigWindow()
         }
         configWindow?.makeKeyAndOrderFront(self)
+        backupCoordinator.performBackup(using: self)
     }
     
     private func showConfigWindow() {
