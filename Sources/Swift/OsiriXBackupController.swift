@@ -1,4 +1,5 @@
 import Cocoa
+import CoreData
 import OsiriXAPI
 
 private let maxSimultaneousTransfers = 2
@@ -6,6 +7,11 @@ private let maxSimultaneousTransfers = 2
 /// Swift controller responsible for orchestrating the OsiriX backup workflow.
 /// It mirrors the responsibilities of the legacy Objective-C `OsiriXBackup` class
 /// while leveraging modern Swift concurrency primitives.
+private struct PendingStudy {
+    let objectID: NSManagedObjectID
+    let studyUID: String
+}
+
 final class OsiriXBackupController: NSObject {
     // MARK: - Public API
 
@@ -84,7 +90,7 @@ final class OsiriXBackupController: NSObject {
     private var useSimpleVerification = true
     private var findscuPath: String?
 
-    private var pendingStudies: [DicomStudy] = []
+    private var pendingStudies: [PendingStudy] = []
     private var activeTransfers: Set<String> = []
     private var retryCounts: [String: Int] = [:]
     private var totalStudyCount: Int = 0
@@ -133,7 +139,7 @@ final class OsiriXBackupController: NSObject {
         workerQueue.async { [weak self] in
             guard let self else { return }
 
-            self.pendingStudies = self.fetchStudiesFromDatabase()
+            self.pendingStudies = self.fetchPendingStudies()
             self.totalStudyCount = self.pendingStudies.count
             self.completedCount = 0
             self.retryCounts.removeAll()
@@ -448,7 +454,7 @@ final class OsiriXBackupController: NSObject {
         guard activeTransfers.count < maxSimultaneousTransfers else { return }
 
         let study = pendingStudies.removeFirst()
-        let studyUID = study.studyInstanceUID ?? UUID().uuidString
+        let studyUID = study.studyUID
         activeTransfers.insert(studyUID)
 
         DispatchQueue.main.async { [weak self] in
@@ -458,33 +464,33 @@ final class OsiriXBackupController: NSObject {
         transferQueue.async { [weak self] in
             guard let self else { return }
             autoreleasepool {
-                let success = self.performTransfer(for: study, studyUID: studyUID)
+                let success = self.performTransfer(for: study.objectID, studyUID: studyUID)
                 self.workerQueue.async {
-                    self.handleTransferCompletion(for: study, studyUID: studyUID, success: success)
+                    self.handleTransferCompletion(for: study, success: success)
                 }
             }
         }
     }
 
-    private func handleTransferCompletion(for study: DicomStudy, studyUID: String, success: Bool) {
+    private func handleTransferCompletion(for study: PendingStudy, success: Bool) {
         guard isBackupRunning else {
-            activeTransfers.remove(studyUID)
+            activeTransfers.remove(study.studyUID)
             return
         }
 
-        activeTransfers.remove(studyUID)
+        activeTransfers.remove(study.studyUID)
 
         if success {
             completedCount += 1
         } else {
-            let attempts = retryCounts[studyUID, default: 0] + 1
-            retryCounts[studyUID] = attempts
+            let attempts = retryCounts[study.studyUID, default: 0] + 1
+            retryCounts[study.studyUID] = attempts
             if attempts < 3 {
                 pendingStudies.append(study)
             } else {
                 completedCount += 1
                 hadTransferFailures = true
-                NSLog("[OsiriXBackupController] Falha persistente ao enviar estudo %@. Ignorando após 3 tentativas.", studyUID)
+                NSLog("[OsiriXBackupController] Falha persistente ao enviar estudo %@. Ignorando após 3 tentativas.", study.studyUID)
             }
         }
 
@@ -581,7 +587,8 @@ final class OsiriXBackupController: NSObject {
         }
     }
 
-    private func performTransfer(for study: DicomStudy, studyUID: String) -> Bool {
+    private func performTransfer(for studyID: NSManagedObjectID, studyUID: String) -> Bool {
+        _ = studyID
         Thread.sleep(forTimeInterval: 1.5)
 
         guard !skipVerification else {
@@ -597,18 +604,33 @@ final class OsiriXBackupController: NSObject {
 
     // MARK: - Helpers
 
-    private func fetchStudiesFromDatabase() -> [DicomStudy] {
-        guard let database = DicomDatabase.activeLocalDatabase() else {
-            NSLog("[OsiriXBackupController] Nenhum banco de dados ativo encontrado.")
-            return []
+    private func fetchPendingStudies() -> [PendingStudy] {
+        var result: [PendingStudy] = []
+
+        let fetchBlock = {
+            guard let database = DicomDatabase.activeLocalDatabase() else {
+                NSLog("[OsiriXBackupController] Nenhum banco de dados ativo encontrado.")
+                return
+            }
+
+            guard let studies = database.objects(forEntity: "Study") as? [DicomStudy] else {
+                NSLog("[OsiriXBackupController] Não foi possível carregar estudos do banco de dados.")
+                return
+            }
+
+            result = studies.map { study in
+                let uid = study.studyInstanceUID ?? UUID().uuidString
+                return PendingStudy(objectID: study.objectID, studyUID: uid)
+            }
         }
 
-        guard let studies = database.objects(forEntity: "Study") as? [DicomStudy] else {
-            NSLog("[OsiriXBackupController] Não foi possível carregar estudos do banco de dados.")
-            return []
+        if Thread.isMainThread {
+            fetchBlock()
+        } else {
+            DispatchQueue.main.sync(execute: fetchBlock)
         }
 
-        return studies
+        return result
     }
 
     private func resolveFindscuPath() -> String? {
