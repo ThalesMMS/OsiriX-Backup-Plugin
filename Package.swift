@@ -24,7 +24,8 @@ let package = Package(
                 "OsiriXBackupController.swift"
             ],
             sources: [
-                "Core/OsiriXBackupCore.swift"
+                "Core/OsiriXBackupCore.swift",
+                "Core/FindscuLocator.swift"
             ]
         ),
         .testTarget(

@@ -19,28 +19,33 @@ An advanced backup plugin for OsiriX that automates sending DICOM studies to rem
 - `docs/` – Generated reference material, including `all_project_code.txt`
 - `OsiriXTestPlugin.xcodeproj` – Xcode project targeting the OsiriX plugin SDK
 
-## Architecture Overview
+## Swift Architecture Overview
 
-The plugin is grouped into three cooperating layers:
+The Swift port consolidates the plugin into layered modules that isolate UI, orchestration, and reusable services:
 
-1. **UI & Control Layer** – `OsiriXBackupSwift` (in `Plugin.swift`) responds to menu actions while `OsiriXBackupController` wires the settings UI, user defaults, and backup execution pipeline. The UI wiring remains in `Settings.xib`, which exposes host/port/AET fields, progress indicators, and verification toggles.
+1. **UI & Control Layer** – `OsiriXBackupSwift` (in `Plugin.swift`) responds to menu actions while `OsiriXBackupController` wires the settings UI, user defaults, and backup execution pipeline. The window still originates from `Settings.xib`, exposing host/port/AET fields, progress indicators, and verification toggles.
 
-2. **Core Services Layer** – `OsiriXBackup` and `OsiriXBackupCore` provide caching, queue management, integrity validation, network optimization, statistics tracking, and error recovery through Swift value types and helper managers.
+2. **Core Services Layer** – `OsiriXBackup` and `OsiriXBackupCore` provide caching, queue management, integrity validation, network optimization, statistics tracking, and error recovery through Swift value types and helper managers. Shared utilities such as the new `FindscuLocator` encapsulate discovery of the DCMTK toolchain and can be unit tested independently of the UI.
 
 3. **Advanced Capabilities Layer** – `OsiriXBackupAdvanced` extends the core workflow with incremental/differential backups, intelligent scheduling, real-time monitoring, deduplication, compression, cloud syncing, disaster recovery, and notification hooks.
 
 Key Swift types:
 
-- `OsiriXBackupController` centralizes plugin initialization, menu dispatch, and settings persistence.
+- `OsiriXBackupController` centralizes plugin initialization, menu dispatch, settings persistence, and `findscu` verification.
 - `OsiriXBackup` orchestrates DICOM export requests, invoking verification and queue management services.
 - `OsiriXBackupCore` houses transfer queues, hashing, compression, and manifest utilities used across backup strategies.
+- `FindscuLocator` resolves and validates the DCMTK CLI across bundled and system paths, caching results in `UserDefaults`.
 - `OsiriXBackupAdvanced` contributes optional schedulers, monitors, and policy engines that plug into the shared controller.
 
-## Prerequisites
+The Swift package now serves as the canonical source for both macOS builds and command-line unit tests, enabling CI coverage without requiring the OsiriX host.
+
+## Prerequisites & Dependencies
 - macOS with OsiriX (MD or non-MD) and its plugin SDK installed
 - Xcode (recommended 14+) with command line tools
-- DCMTK utilities (e.g., `findscu`) available either on `$PATH` or bundled inside the plugin resources
+- Swift 5.9 or newer to build the Swift Package Manager test suite
+- DCMTK utilities (e.g., `findscu`) available either on `$PATH` or bundled inside the plugin resources; the `FindscuLocator` service automatically tests and caches the path
 - Access to a DICOM destination (AE Title, host, port) for backup testing
+- Optional: Compression framework (`Compression.framework`) for manifest persistence optimisations
 
 ## Building the Plugin
 1. Open `OsiriXTestPlugin.xcodeproj` in Xcode.
@@ -76,6 +81,11 @@ Values persist through `NSUserDefaults` keys (`OsiriXBackupHostAddress`, `OsiriX
 5. Transfers execute through `DCMTKStoreSCU`, supporting up to `MAX_SIMULTANEOUS_TRANSFERS` (2 by default). A retry map guards against transient failures, with exponential backoff managed by `OsiriXErrorRecoveryManager`.
 
 Pausing or stopping allows in-flight transfers to finish gracefully while new ones are deferred. On completion, the plugin exports statistics to `/tmp/osirix_backup_stats.(csv|json)` and an HTML report, opening the latter in the default browser.
+
+## Testing & Validation
+
+- Automated coverage lives under `Tests/OsiriXBackupPluginTests`. Run `swift test` to execute queue management, integrity validation, and findscu discovery tests without launching OsiriX.
+- Manual validation scenarios (UI walkthrough, progress monitoring, manifest inspection) are documented in [`Docs/TestPlans.md`](Docs/TestPlans.md) for execution inside OsiriX.
 
 ## Advanced Features
 - **Incremental & Differential Backups** – `OsiriXIncrementalBackupManager` snapshots hashes per study to compute deltas (`recordBackupSnapshot:`, `studiesForIncrementalBackup:`).
