@@ -102,7 +102,12 @@ final class OsiriXBackupController: NSObject {
             cachedPathProvider: { [weak self] in self?.findscuPath },
             updateCachedPath: { [weak self] path in
                 self?.findscuPath = path
-                self?.defaults.set(path, forKey: "OsiriXBackupFindscuPath")
+                guard let self else { return }
+                if let path {
+                    self.defaults.set(path, forKey: "OsiriXBackupFindscuPath")
+                } else {
+                    self.defaults.removeObject(forKey: "OsiriXBackupFindscuPath")
+                }
             },
             bundledExecutablePath: { [weak self] in self?.bundledFindscuPath() }
         )
