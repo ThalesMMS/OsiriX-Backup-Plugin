@@ -18,6 +18,7 @@
                 F3CD12B42F6FA2D9006C47A1 /* OsiriXBackupCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3CD12AF2F6FA2D9006C47A1 /* OsiriXBackupCore.swift */; };
                 F3CD12B52F6FA2D9006C47A1 /* OsiriXBackupAdvanced.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3CD12B02F6FA2D9006C47A1 /* OsiriXBackupAdvanced.swift */; };
                 F3CD12B62F6FA2D9006C47A1 /* OsiriXAPI+Wrappers.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3CD12B12F6FA2D9006C47A1 /* OsiriXAPI+Wrappers.swift */; };
+                F3CD12B82F6FA2D9006C47A1 /* OsiriXBackupController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3CD12B72F6FA2D9006C47A1 /* OsiriXBackupController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +33,7 @@
                 F3CD12B02F6FA2D9006C47A1 /* OsiriXBackupAdvanced.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Swift/Advanced/OsiriXBackupAdvanced.swift; sourceTree = "<group>"; };
                 F3CD12B12F6FA2D9006C47A1 /* OsiriXAPI+Wrappers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Swift/Core/OsiriXAPI+Wrappers.swift; sourceTree = "<group>"; };
                 F3CD12B22F6FA2D9006C47A1 /* OsiriXBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Swift/Core/OsiriXBackup.swift; sourceTree = "<group>"; };
+                F3CD12B72F6FA2D9006C47A1 /* OsiriXBackupController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Swift/OsiriXBackupController.swift; sourceTree = "<group>"; };
 		CEC0F6E028BF4354003DD38F /* OsiriXTestPlugin.osirixplugin */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OsiriXTestPlugin.osirixplugin; sourceTree = BUILT_PRODUCTS_DIR; };
 		CEC0F6E928BF45CD003DD38F /* OsiriXAPI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = OsiriXAPI.framework; sourceTree = "<group>"; };
 		CEC0F6EC28BF49EB003DD38F /* Settings.xib */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.xib; path = Resources/Settings.xib; sourceTree = "<group>"; };
@@ -98,6 +100,7 @@
                         children = (
                                 CEC0F6F128BF8DF5003DD38F /* Plugin.swift */,
                                 F3CD12B12F6FA2D9006C47A1 /* OsiriXAPI+Wrappers.swift */,
+                                F3CD12B72F6FA2D9006C47A1 /* OsiriXBackupController.swift */,
                                 F3CD12B22F6FA2D9006C47A1 /* OsiriXBackup.swift */,
                                 F3CD12AF2F6FA2D9006C47A1 /* OsiriXBackupCore.swift */,
                         );
@@ -219,6 +222,7 @@
                                 CEC0F6F228BF8DF5003DD38F /* Plugin.swift in Sources */,
                                 1214B6E42DD9161B00A77E1C /* OsiriXBackup.m in Sources */,
                                 F3CD12B62F6FA2D9006C47A1 /* OsiriXAPI+Wrappers.swift in Sources */,
+                                F3CD12B82F6FA2D9006C47A1 /* OsiriXBackupController.swift in Sources */,
                                 12517A762E6B0F420095A2E2 /* OsiriXBackupAdvanced.m in Sources */,
                                 F3CD12B32F6FA2D9006C47A1 /* OsiriXBackup.swift in Sources */,
                                 F3CD12B42F6FA2D9006C47A1 /* OsiriXBackupCore.swift in Sources */,
