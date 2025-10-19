@@ -1,6 +1,7 @@
 // OsiriXBackup.m - Versão com novas correções (continuação)
 
 #import "OsiriXBackup.h"
+#import "OsiriXTestPlugin-Swift.h"
 // Tentar importar NSFileManager+N2.h, mesmo que o método específico não funcione,
 // pode haver outras utilidades nele. Se causar erro de "arquivo não encontrado", remova.
 // #import <OsiriXAPI/NSFileManager+N2.h> // Comentado - pode não existir em todas as versões
