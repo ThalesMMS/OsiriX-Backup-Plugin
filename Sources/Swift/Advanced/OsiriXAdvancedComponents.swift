@@ -1003,9 +1003,13 @@ private struct CronExpression {
     }
 
     func nextDate(after date: Date) -> Date? {
-        var next = date.addingTimeInterval(60)
         let calendar = Calendar.current
-        for _ in 0..<10000 {
+        guard let searchLimit = calendar.date(byAdding: .day, value: 366, to: date) else {
+            return nil
+        }
+
+        var next = calendar.date(byAdding: .minute, value: 1, to: date) ?? date.addingTimeInterval(60)
+        while next <= searchLimit {
             let components = calendar.dateComponents([.minute, .hour, .day, .month, .weekday, .year], from: next)
             if minute.matches(components.minute ?? 0) &&
                 hour.matches(components.hour ?? 0) &&
@@ -1014,7 +1018,11 @@ private struct CronExpression {
                 weekday.matches((components.weekday ?? 1) - 1) {
                 return next
             }
-            next = next.addingTimeInterval(60)
+
+            guard let advanced = calendar.date(byAdding: .minute, value: 1, to: next) else {
+                break
+            }
+            next = advanced
         }
         return nil
     }
