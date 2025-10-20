@@ -15,8 +15,12 @@ private struct PendingStudy {
 final class OsiriXBackupController: NSObject {
     // MARK: - Public API
 
-    init(pluginFilter: PluginFilter) {
+    init(
+        pluginFilter: PluginFilter,
+        transferPipeline: OsiriXStudyTransferPipeline = OsiriXStudyTransferPipeline()
+    ) {
         self.pluginFilter = pluginFilter
+        self.transferPipeline = transferPipeline
         super.init()
     }
 
@@ -82,6 +86,7 @@ final class OsiriXBackupController: NSObject {
     private weak var pluginFilter: PluginFilter?
     private let workerQueue = DispatchQueue(label: "com.osirix.backup.worker", qos: .userInitiated)
     private let transferQueue = DispatchQueue(label: "com.osirix.backup.transfer", qos: .userInitiated, attributes: .concurrent)
+    private let transferPipeline: OsiriXStudyTransferPipeline
 
     private var backupTimer: DispatchSourceTimer?
 
@@ -666,18 +671,58 @@ final class OsiriXBackupController: NSObject {
     }
 
     private func performTransfer(for studyID: NSManagedObjectID, studyUID: String) -> Bool {
-        _ = studyID
-        Thread.sleep(forTimeInterval: 1.5)
+        var study: DicomStudy?
+        let fetchBlock = {
+            guard let database = DicomDatabase.activeLocalDatabase(),
+                  let studies = database.objects(forEntity: "Study") as? [DicomStudy] else {
+                NSLog("[OsiriXBackupController] Não foi possível localizar o banco de dados ativo para o estudo %@.", studyUID)
+                return
+            }
 
-        guard !skipVerification else {
-            return true
+            study = studies.first(where: { $0.objectID == studyID })
         }
 
-        if useSimpleVerification {
-            return studyExistsWithCountCheck(studyUID: studyUID)
+        if Thread.isMainThread {
+            fetchBlock()
+        } else {
+            DispatchQueue.main.sync(execute: fetchBlock)
         }
 
-        return studyExistsOnDestination(studyUID: studyUID)
+        guard let resolvedStudy = study else {
+            NSLog("[OsiriXBackupController] Não foi possível localizar o estudo %@ para envio.", studyUID)
+            return false
+        }
+
+        let destination = StudyTransferDestination(
+            host: hostAddress,
+            port: portNumber,
+            callingAE: aeTitle,
+            calledAE: aeDestination
+        )
+
+        let verificationMode: TransferVerificationMode
+        if skipVerification {
+            verificationMode = .skip
+        } else if useSimpleVerification {
+            verificationMode = .simple { [weak self] in
+                guard let self else { return false }
+                return self.studyExistsWithCountCheck(studyUID: studyUID)
+            }
+        } else {
+            verificationMode = .advanced { [weak self] in
+                guard let self else { return false }
+                return self.studyExistsOnDestination(studyUID: studyUID)
+            }
+        }
+
+        let outcome = transferPipeline.performTransfer(
+            study: resolvedStudy,
+            studyUID: studyUID,
+            destination: destination,
+            verification: verificationMode
+        )
+
+        return outcome.success
     }
 
     // MARK: - Helpers
