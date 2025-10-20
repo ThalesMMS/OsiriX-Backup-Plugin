@@ -25,7 +25,8 @@ let package = Package(
             ],
             sources: [
                 "Core/OsiriXBackupCore.swift",
-                "Core/FindscuLocator.swift"
+                "Core/FindscuLocator.swift",
+                "Core/StudyTransferPipeline.swift"
             ]
         ),
         .testTarget(

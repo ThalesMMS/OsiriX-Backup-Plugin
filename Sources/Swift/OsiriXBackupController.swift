@@ -15,8 +15,12 @@ private struct PendingStudy {
 final class OsiriXBackupController: NSObject {
     // MARK: - Public API
 
-    init(pluginFilter: PluginFilter) {
+    init(
+        pluginFilter: PluginFilter,
+        transferPipeline: OsiriXStudyTransferPipeline = OsiriXStudyTransferPipeline()
+    ) {
         self.pluginFilter = pluginFilter
+        self.transferPipeline = transferPipeline
         super.init()
     }
 
@@ -82,6 +86,7 @@ final class OsiriXBackupController: NSObject {
     private weak var pluginFilter: PluginFilter?
     private let workerQueue = DispatchQueue(label: "com.osirix.backup.worker", qos: .userInitiated)
     private let transferQueue = DispatchQueue(label: "com.osirix.backup.transfer", qos: .userInitiated, attributes: .concurrent)
+    private let transferPipeline: OsiriXStudyTransferPipeline
 
     private var backupTimer: DispatchSourceTimer?
 
@@ -666,18 +671,138 @@ final class OsiriXBackupController: NSObject {
     }
 
     private func performTransfer(for studyID: NSManagedObjectID, studyUID: String) -> Bool {
-        _ = studyID
-        Thread.sleep(forTimeInterval: 1.5)
+        let destination = StudyTransferDestination(
+            host: hostAddress,
+            port: portNumber,
+            callingAE: aeTitle,
+            calledAE: aeDestination
+        )
 
-        guard !skipVerification else {
-            return true
+        let verificationMode: TransferVerificationMode
+        if skipVerification {
+            verificationMode = .skip
+        } else if useSimpleVerification {
+            verificationMode = .simple { [weak self] in
+                guard let self else { return false }
+                return self.studyExistsWithCountCheck(studyUID: studyUID)
+            }
+        } else {
+            verificationMode = .advanced { [weak self] in
+                guard let self else { return false }
+                return self.studyExistsOnDestination(studyUID: studyUID)
+            }
         }
 
-        if useSimpleVerification {
-            return studyExistsWithCountCheck(studyUID: studyUID)
+#if canImport(CoreData)
+        guard let database = DicomDatabase.activeLocalDatabase() else {
+            NSLog("[OsiriXBackupController] Não foi possível localizar o banco de dados ativo para o estudo %@.", studyUID)
+            return false
         }
 
-        return studyExistsOnDestination(studyUID: studyUID)
+        guard let transferContext = makeTransferContext(from: database) else {
+            NSLog("[OsiriXBackupController] Não foi possível criar um contexto de transferência para o estudo %@.", studyUID)
+            return false
+        }
+
+        var transferSuccess = false
+        var didAttemptTransfer = false
+
+        transferContext.performAndWait {
+            do {
+                guard let study = try transferContext.existingObject(with: studyID) as? DicomStudy else {
+                    NSLog("[OsiriXBackupController] Não foi possível localizar o estudo %@ para envio.", studyUID)
+                    return
+                }
+
+                let outcome = transferPipeline.performTransfer(
+                    study: study,
+                    studyUID: studyUID,
+                    destination: destination,
+                    verification: verificationMode
+                )
+
+                transferSuccess = outcome.success
+                didAttemptTransfer = true
+            } catch {
+                NSLog("[OsiriXBackupController] Erro ao buscar o estudo %@: %@", studyUID, String(describing: error))
+            }
+        }
+
+        if !didAttemptTransfer {
+            NSLog("[OsiriXBackupController] Não foi possível preparar o estudo %@ para envio.", studyUID)
+        }
+
+        return transferSuccess
+#else
+        var study: DicomStudy?
+        let fetchBlock = {
+            guard let database = DicomDatabase.activeLocalDatabase(),
+                  let studies = database.objects(forEntity: "Study") as? [DicomStudy] else {
+                NSLog("[OsiriXBackupController] Não foi possível localizar o banco de dados ativo para o estudo %@.", studyUID)
+                return
+            }
+
+            study = studies.first(where: { $0.objectID == studyID })
+        }
+
+        if Thread.isMainThread {
+            fetchBlock()
+        } else {
+            DispatchQueue.main.sync(execute: fetchBlock)
+        }
+
+        guard let resolvedStudy = study else {
+            NSLog("[OsiriXBackupController] Não foi possível localizar o estudo %@ para envio.", studyUID)
+            return false
+        }
+
+        let outcome = transferPipeline.performTransfer(
+            study: resolvedStudy,
+            studyUID: studyUID,
+            destination: destination,
+            verification: verificationMode
+        )
+
+        return outcome.success
+#endif
+    }
+
+#if canImport(CoreData)
+    private func makeTransferContext(from database: AnyObject) -> NSManagedObjectContext? {
+        if let coordinator: NSPersistentStoreCoordinator = value(forKey: "persistentStoreCoordinator", in: database) {
+            let context = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
+            context.persistentStoreCoordinator = coordinator
+            context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
+            context.undoManager = nil
+            return context
+        }
+
+        if let parentContext: NSManagedObjectContext = value(forKey: "managedObjectContext", in: database) {
+            let context = NSManagedObjectContext(concurrencyType: .privateQueueConcurrencyType)
+            context.parent = parentContext
+            context.mergePolicy = parentContext.mergePolicy
+            context.undoManager = nil
+            return context
+        }
+
+        return nil
+    }
+#endif
+
+    private func value<T>(forKey key: String, in object: AnyObject?) -> T? {
+        guard let object else { return nil }
+#if canImport(ObjectiveC)
+        return (object as? NSObject)?.value(forKey: key) as? T
+#else
+        var mirror: Mirror? = Mirror(reflecting: object)
+        while let current = mirror {
+            for child in current.children where child.label == key {
+                return child.value as? T
+            }
+            mirror = current.superclassMirror
+        }
+        return nil
+#endif
     }
 
     // MARK: - Helpers
