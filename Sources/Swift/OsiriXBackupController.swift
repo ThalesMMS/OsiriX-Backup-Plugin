@@ -27,11 +27,16 @@ final class OsiriXBackupController: NSObject {
     func initializePlugin() {
         workerQueue.async { [weak self] in
             guard let self else { return }
-            self.pendingStudies.removeAll()
-            self.activeTransfers.removeAll()
-            self.retryCounts.removeAll()
-            self.completedCount = 0
-            self.totalStudyCount = 0
+            self.updateState { state in
+                state.pendingStudies.removeAll()
+                state.activeTransfers.removeAll()
+                state.retryCounts.removeAll()
+                state.completedCount = 0
+                state.totalStudyCount = 0
+                state.hadTransferFailures = false
+                state.isBackupRunning = false
+                state.isBackupPaused = false
+            }
         }
         loadSettings()
         ensureWindowLoaded()
@@ -79,8 +84,20 @@ final class OsiriXBackupController: NSObject {
     private let transferQueue = DispatchQueue(label: "com.osirix.backup.transfer", qos: .userInitiated, attributes: .concurrent)
 
     private var backupTimer: DispatchSourceTimer?
-    private var isBackupRunning = false
-    private var isBackupPaused = false
+
+    private struct BackupState {
+        var isBackupRunning = false
+        var isBackupPaused = false
+        var pendingStudies: [PendingStudy] = []
+        var activeTransfers: Set<String> = []
+        var retryCounts: [String: Int] = [:]
+        var totalStudyCount: Int = 0
+        var completedCount: Int = 0
+        var hadTransferFailures = false
+    }
+
+    private let stateQueue = DispatchQueue(label: "com.osirix.backup.state")
+    private var state = BackupState()
 
     private var hostAddress: String = ""
     private var portNumber: Int = 104
@@ -114,13 +131,6 @@ final class OsiriXBackupController: NSObject {
         return FindscuLocator(environment: environment)
     }()
 
-    private var pendingStudies: [PendingStudy] = []
-    private var activeTransfers: Set<String> = []
-    private var retryCounts: [String: Int] = [:]
-    private var totalStudyCount: Int = 0
-    private var completedCount: Int = 0
-    private var hadTransferFailures = false
-
     private let defaults = UserDefaults.standard
 
     private var resourceBundle: Bundle {
@@ -148,14 +158,16 @@ final class OsiriXBackupController: NSObject {
             }
         }
 
-        guard !isBackupRunning else {
+        guard !isBackupRunning() else {
             configWindow?.makeKeyAndOrderFront(self)
             return
         }
 
-        isBackupRunning = true
-        isBackupPaused = false
-        hadTransferFailures = false
+        updateState { state in
+            state.isBackupRunning = true
+            state.isBackupPaused = false
+            state.hadTransferFailures = false
+        }
         updateButtonsForRunningState()
         updateStatus("Preparando estudos para envio...")
         persistSettings()
@@ -163,17 +175,21 @@ final class OsiriXBackupController: NSObject {
         workerQueue.async { [weak self] in
             guard let self else { return }
 
-            self.pendingStudies = self.fetchPendingStudies()
-            self.totalStudyCount = self.pendingStudies.count
-            self.completedCount = 0
-            self.retryCounts.removeAll()
+            let studies = self.fetchPendingStudies()
+            let hasPending = self.updateState { state in
+                state.pendingStudies = studies
+                state.totalStudyCount = studies.count
+                state.completedCount = 0
+                state.retryCounts.removeAll()
+                return !state.pendingStudies.isEmpty
+            }
 
             DispatchQueue.main.async {
                 self.progressIndicator?.doubleValue = 0.0
                 self.progressIndicator?.maxValue = 100.0
             }
 
-            if self.pendingStudies.isEmpty {
+            if !hasPending {
                 self.finishBackup(interrupted: false)
             } else {
                 self.startTimer()
@@ -182,15 +198,19 @@ final class OsiriXBackupController: NSObject {
     }
 
     @IBAction func pauseBackup(_ sender: Any?) {
-        guard isBackupRunning else { return }
+        guard isBackupRunning() else { return }
 
-        isBackupPaused.toggle()
+        let isPaused = updateState { state -> Bool in
+            guard state.isBackupRunning else { return state.isBackupPaused }
+            state.isBackupPaused.toggle()
+            return state.isBackupPaused
+        }
         updateButtonsForRunningState()
-        updateStatus(isBackupPaused ? "Backup pausado." : "Retomando backup...")
+        updateStatus(isPaused ? "Backup pausado." : "Retomando backup...")
     }
 
     @IBAction func stopBackup(_ sender: Any?) {
-        guard isBackupRunning else { return }
+        guard isBackupRunning() else { return }
 
         workerQueue.async { [weak self] in
             self?.finishBackup(interrupted: true)
@@ -466,20 +486,34 @@ final class OsiriXBackupController: NSObject {
     }
 
     private func processQueue() {
-        guard isBackupRunning, !isBackupPaused else { return }
-
-        if pendingStudies.isEmpty {
-            if activeTransfers.isEmpty {
-                finishBackup(interrupted: false)
-            }
-            return
+        enum QueueDecision {
+            case idle
+            case finish
+            case study(PendingStudy)
         }
 
-        guard activeTransfers.count < maxSimultaneousTransfers else { return }
+        let decision = updateState { state -> QueueDecision in
+            guard state.isBackupRunning, !state.isBackupPaused else { return .idle }
 
-        let study = pendingStudies.removeFirst()
-        let studyUID = study.studyUID
-        activeTransfers.insert(studyUID)
+            if state.pendingStudies.isEmpty {
+                return state.activeTransfers.isEmpty ? .finish : .idle
+            }
+
+            guard state.activeTransfers.count < maxSimultaneousTransfers else { return .idle }
+
+            let study = state.pendingStudies.removeFirst()
+            state.activeTransfers.insert(study.studyUID)
+            return .study(study)
+        }
+
+        switch decision {
+        case .idle:
+            return
+        case .finish:
+            finishBackup(interrupted: false)
+            return
+        case .study(let study):
+            let studyUID = study.studyUID
 
         DispatchQueue.main.async { [weak self] in
             self?.updateStatus("Enviando estudo \(studyUID)...")
@@ -494,55 +528,70 @@ final class OsiriXBackupController: NSObject {
                 }
             }
         }
+        }
     }
 
     private func handleTransferCompletion(for study: PendingStudy, success: Bool) {
-        guard isBackupRunning else {
-            activeTransfers.remove(study.studyUID)
-            return
-        }
-
-        activeTransfers.remove(study.studyUID)
-
-        if success {
-            completedCount += 1
-        } else {
-            let attempts = retryCounts[study.studyUID, default: 0] + 1
-            retryCounts[study.studyUID] = attempts
-            if attempts < 3 {
-                pendingStudies.append(study)
-            } else {
-                completedCount += 1
-                hadTransferFailures = true
-                NSLog("[OsiriXBackupController] Falha persistente ao enviar estudo %@. Ignorando após 3 tentativas.", study.studyUID)
+        let outcome = updateState { state -> (shouldContinue: Bool, shouldFinish: Bool) in
+            guard state.isBackupRunning else {
+                state.activeTransfers.remove(study.studyUID)
+                return (false, false)
             }
+
+            state.activeTransfers.remove(study.studyUID)
+
+            if success {
+                state.completedCount += 1
+                state.retryCounts.removeValue(forKey: study.studyUID)
+            } else {
+                let attempts = state.retryCounts[study.studyUID, default: 0] + 1
+                state.retryCounts[study.studyUID] = attempts
+                if attempts < 3 {
+                    state.pendingStudies.append(study)
+                } else {
+                    state.completedCount += 1
+                    state.hadTransferFailures = true
+                    NSLog("[OsiriXBackupController] Falha persistente ao enviar estudo %@. Ignorando após 3 tentativas.", study.studyUID)
+                }
+            }
+
+            let shouldFinish = state.pendingStudies.isEmpty && state.activeTransfers.isEmpty
+            return (true, shouldFinish)
         }
+
+        guard outcome.shouldContinue else { return }
 
         updateProgress()
 
-        if pendingStudies.isEmpty && activeTransfers.isEmpty {
+        if outcome.shouldFinish {
             finishBackup(interrupted: false)
         }
     }
 
     private func finishBackup(interrupted: Bool) {
         stopTimer()
-        let summary: String
-        if interrupted {
-            summary = "Backup interrompido."
-        } else if hadTransferFailures {
-            summary = "Backup finalizado com pendências."
-        } else if pendingStudies.isEmpty && activeTransfers.isEmpty {
-            summary = "Backup finalizado com sucesso!"
-        } else {
-            summary = "Backup finalizado com pendências."
+        let summary = readState { state in
+            if interrupted {
+                return "Backup interrompido."
+            } else if state.hadTransferFailures {
+                return "Backup finalizado com pendências."
+            } else if state.pendingStudies.isEmpty && state.activeTransfers.isEmpty {
+                return "Backup finalizado com sucesso!"
+            } else {
+                return "Backup finalizado com pendências."
+            }
         }
 
-        isBackupRunning = false
-        isBackupPaused = false
-        pendingStudies.removeAll()
-        activeTransfers.removeAll()
-        hadTransferFailures = false
+        updateState { state in
+            state.isBackupRunning = false
+            state.isBackupPaused = false
+            state.pendingStudies.removeAll()
+            state.activeTransfers.removeAll()
+            state.retryCounts.removeAll()
+            state.totalStudyCount = 0
+            state.completedCount = 0
+            state.hadTransferFailures = false
+        }
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -567,9 +616,13 @@ final class OsiriXBackupController: NSObject {
     }
 
     private func updateButtonsForRunningState() {
+        let snapshot = readState { state in
+            (state.isBackupRunning, state.isBackupPaused)
+        }
+
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            if self.isBackupRunning {
+            if snapshot.0 {
                 self.startBackupButton?.title = "Backup em andamento"
                 self.startBackupButton?.isEnabled = false
                 self.pauseBackupButton?.isHidden = false
@@ -582,7 +635,7 @@ final class OsiriXBackupController: NSObject {
                 self.skipVerificationCheckbox?.isEnabled = false
                 self.simpleVerificationCheckbox?.isEnabled = false
 
-                self.pauseBackupButton?.title = self.isBackupPaused ? "Retomar" : "Pausar"
+                self.pauseBackupButton?.title = snapshot.1 ? "Retomar" : "Pausar"
             } else {
                 self.startBackupButton?.title = "Iniciar Backup"
                 self.startBackupButton?.isEnabled = true
@@ -594,8 +647,9 @@ final class OsiriXBackupController: NSObject {
     }
 
     private func updateProgress() {
-        let total = totalStudyCount
-        let completed = completedCount
+        let (completed, total) = readState { state in
+            (state.completedCount, state.totalStudyCount)
+        }
         let percentage: Double = total == 0 ? 0 : (Double(completed) / Double(total)) * 100.0
 
         DispatchQueue.main.async { [weak self] in
@@ -744,5 +798,26 @@ final class OsiriXBackupController: NSObject {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         guard let output = String(data: data, encoding: .utf8) else { return false }
         return output.contains("# Dicom-Data-Set")
+    }
+}
+
+// MARK: - State Helpers
+
+private extension OsiriXBackupController {
+    @discardableResult
+    func updateState<T>(_ block: (inout BackupState) -> T) -> T {
+        stateQueue.sync {
+            block(&state)
+        }
+    }
+
+    func readState<T>(_ block: (BackupState) -> T) -> T {
+        stateQueue.sync {
+            block(state)
+        }
+    }
+
+    func isBackupRunning() -> Bool {
+        readState { $0.isBackupRunning }
     }
 }
