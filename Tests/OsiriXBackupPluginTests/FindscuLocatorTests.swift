@@ -20,6 +20,24 @@ private final class StubProcessRunner: FindscuProcessRunning, @unchecked Sendabl
 }
 
 final class FindscuLocatorTests: XCTestCase {
+    func testDefaultRunnerReturnsOutputOnSuccess() throws {
+        let runner = DefaultFindscuProcessRunner()
+        let output = try runner.run(path: "/bin/sh", arguments: ["-c", "printf 'ok'"])
+        XCTAssertEqual(output, "ok")
+    }
+
+    func testDefaultRunnerThrowsOnNonZeroExit() {
+        let runner = DefaultFindscuProcessRunner()
+        XCTAssertThrowsError(try runner.run(path: "/bin/sh", arguments: ["-c", "echo failure >&2; exit 2"])) { error in
+            guard case let FindscuProcessError.nonZeroExit(status, _, output) = error else {
+                XCTFail("Esperado erro FindscuProcessError, mas foi \(error)")
+                return
+            }
+            XCTAssertEqual(status, 2)
+            XCTAssertTrue(output.contains("failure"))
+        }
+    }
+
     func testResolveReturnsCachedPathWhenStillValid() {
         let fileManager = StubFileManager()
         fileManager.executablePaths = ["/cached/findscu"]

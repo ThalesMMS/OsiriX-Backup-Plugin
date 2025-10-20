@@ -462,6 +462,30 @@ final class OsiriXBackupController: NSObject {
         alert.runModal()
     }
 
+    private func presentFindscuExecutionFailureAlert(status: Int32, reason: Process.TerminationReason, output: String) {
+        let alert = NSAlert()
+        alert.messageText = "Falha ao executar findscu"
+
+        let reasonDescription: String
+        switch reason {
+        case .exit:
+            reasonDescription = "exit"
+        case .uncaughtSignal:
+            reasonDescription = "signal"
+        @unknown default:
+            reasonDescription = "unknown"
+        }
+
+        var informativeText = "findscu terminou com código \(status) (motivo: \(reasonDescription))."
+        if !output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            informativeText += "\n\nSaída:\n\(output)"
+        }
+
+        alert.informativeText = informativeText
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     // MARK: - Timer & Processing
 
     private func startTimer() {
@@ -886,7 +910,23 @@ final class OsiriXBackupController: NSObject {
 
         process.waitUntilExit()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8) else { return false }
+        let output = String(data: data, encoding: .utf8) ?? ""
+
+        guard process.terminationStatus == 0 else {
+            let reason = process.terminationReason
+            NSLog(
+                "[OsiriXBackupController] findscu falhou ao verificar estudo %@: status=%d reason=%@ output=%@",
+                studyUID,
+                process.terminationStatus,
+                String(describing: reason),
+                output
+            )
+            DispatchQueue.main.async { [weak self] in
+                self?.presentFindscuExecutionFailureAlert(status: process.terminationStatus, reason: reason, output: output)
+            }
+            return false
+        }
+
         return output.contains(studyUID)
     }
 
@@ -921,7 +961,23 @@ final class OsiriXBackupController: NSObject {
 
         process.waitUntilExit()
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let output = String(data: data, encoding: .utf8) else { return false }
+        let output = String(data: data, encoding: .utf8) ?? ""
+
+        guard process.terminationStatus == 0 else {
+            let reason = process.terminationReason
+            NSLog(
+                "[OsiriXBackupController] findscu falhou em verificação simplificada para %@: status=%d reason=%@ output=%@",
+                studyUID,
+                process.terminationStatus,
+                String(describing: reason),
+                output
+            )
+            DispatchQueue.main.async { [weak self] in
+                self?.presentFindscuExecutionFailureAlert(status: process.terminationStatus, reason: reason, output: output)
+            }
+            return false
+        }
+
         return output.contains("# Dicom-Data-Set")
     }
 }

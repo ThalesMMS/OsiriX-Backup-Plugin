@@ -1,5 +1,29 @@
 import Foundation
 
+enum FindscuProcessError: LocalizedError {
+    case nonZeroExit(status: Int32, reason: Process.TerminationReason, output: String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .nonZeroExit(status, reason, output):
+            let reasonDescription: String
+            switch reason {
+            case .exit:
+                reasonDescription = "exit"
+            case .uncaughtSignal:
+                reasonDescription = "signal"
+            @unknown default:
+                reasonDescription = "unknown"
+            }
+            if output.isEmpty {
+                return "findscu terminou com código \(status) (motivo: \(reasonDescription))"
+            } else {
+                return "findscu terminou com código \(status) (motivo: \(reasonDescription)). Saída: \(output)"
+            }
+        }
+    }
+}
+
 protocol FindscuProcessRunning {
     func run(path: String, arguments: [String]) throws -> String
 }
@@ -17,7 +41,17 @@ struct DefaultFindscuProcessRunner: FindscuProcessRunning {
         process.waitUntilExit()
 
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8) ?? ""
+        let output = String(data: data, encoding: .utf8) ?? ""
+
+        if process.terminationStatus != 0 {
+            throw FindscuProcessError.nonZeroExit(
+                status: process.terminationStatus,
+                reason: process.terminationReason,
+                output: output
+            )
+        }
+
+        return output
     }
 }
 
@@ -66,6 +100,7 @@ struct FindscuLocator {
             let output = try environment.processRunner.run(path: path, arguments: ["--version"])
             return output.contains("findscu") && output.contains("DCMTK")
         } catch {
+            NSLog("[FindscuLocator] Falha ao validar findscu em %@: %@", path, error.localizedDescription)
             return false
         }
     }
